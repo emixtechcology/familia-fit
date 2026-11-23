@@ -40,7 +40,7 @@ svg.i{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:2;stroke
 .hero .nombre{font-size:32px;font-weight:800;letter-spacing:-.5px;margin-top:2px}
 .hero-top{display:flex;align-items:center;gap:12px}
 .hero-top>div:first-child{flex:1}
-.av{width:54px;height:54px;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:800;font-size:22px;border:3px solid rgba(255,255,255,.85);flex:none}
+.av{width:54px;height:54px;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:800;font-size:22px;border:3px solid rgba(255,255,255,.85);flex:none !important}
 .circ{width:46px;height:46px;border-radius:50%;border:0;display:grid;place-items:center;background:rgba(255,255,255,.18);color:#fff;flex:none}
 .circ.claro{background:var(--card);color:var(--tx);box-shadow:var(--sombra)}
 .racha{margin-top:20px;background:rgba(22,14,64,.55);border-radius:24px;padding:18px 20px;display:flex;align-items:center;gap:16px}
@@ -127,6 +127,9 @@ textarea{resize:none;min-height:96px;line-height:1.4}
 .hoja>div{background:var(--bg);width:100%;max-width:520px;margin:0 auto;border-radius:32px 32px 0 0;padding:10px 20px calc(24px + var(--safe-b));max-height:90vh;overflow:auto}
 .hoja>div:before{content:'';display:block;width:42px;height:5px;border-radius:9px;background:var(--linea);margin:0 auto 16px}
 .hoja h3{font-size:21px}
+.hoja-top{position:sticky;top:0;height:0;display:flex;justify-content:flex-end;z-index:6}
+.hoja-x{width:42px;height:42px;border-radius:50%;border:0;background:var(--card);color:var(--tx);box-shadow:0 4px 14px rgba(20,20,50,.18);display:grid;place-items:center;margin-top:-6px;flex:none}
+.hoja-x svg{width:20px;height:20px}
 .acciones{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:14px}
 .acc{border:0;border-radius:24px;padding:18px 8px;font-weight:800;font-size:14px;display:flex;flex-direction:column;align-items:center;gap:10px}
 .acc .ico-c{background:rgba(255,255,255,.65)}
@@ -300,7 +303,8 @@ function cargando(on, texto) {
 }
 function hoja(html) {
   cerrarHoja();
-  const h = document.createElement('div'); h.className = 'hoja'; h.id = 'hoja'; h.innerHTML = `<div>${html}</div>`;
+  const h = document.createElement('div'); h.className = 'hoja'; h.id = 'hoja';
+  h.innerHTML = `<div><div class="hoja-top"><button class="hoja-x" onclick="cerrarHoja()" aria-label="Cerrar">${ic('x')}</button></div>${html}</div>`;
   h.addEventListener('click', e => { if (e.target === h) cerrarHoja(); });
   document.body.appendChild(h); return h;
 }
@@ -1247,6 +1251,7 @@ function tarjetasHoy() {
   return h;
 }
 
+document.addEventListener('keydown', e => { if (e.key === 'Escape') cerrarHoja(); });
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && S.perfil && S.tab === 'hoy') refrescarPanel().then(vHoy).catch(() => {});
 });
