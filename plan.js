@@ -137,11 +137,18 @@ var CALENDARIO_RUTINA = {
 };
 var NOMBRE_SESION = {
   fuerzaA: 'Fuerza A · piernas y empuje', fuerzaB: 'Fuerza B · espalda y brazos', cardio: 'Cardio quema grasa',
-  core: 'Core y abdomen', activo: 'Caminata activa', descanso: 'Descanso activo'
+  core: 'Core y abdomen', activo: 'Caminata activa', descanso: 'Descanso activo',
+  pierna: 'Pierna y glúteo', superior: 'Torso y brazos', maquina: 'Cardio en máquina', libre: 'Mi rutina'
 };
+var MAQUINAS_CARDIO = ['caminadora', 'bicicleta', 'remadora', 'escaladora', 'eliptica', 'bodycrunch'];
+/** Tipo de sesión del día (0 = lunes). Respeta la semana personalizada y usa máquinas en días de cardio si las tiene. */
 function tipoSesion(q, diaSemana) {
+  if (q && q.semanaPersonal && q.semanaPersonal[diaSemana]) return q.semanaPersonal[diaSemana];
   var d = Math.max(2, Math.min(6, parseInt(q && q.dias, 10) || 3));
-  return CALENDARIO_RUTINA[d][diaSemana];
+  var t = CALENDARIO_RUTINA[d][diaSemana];
+  var maqs = ((q && q.equipos) || []).filter(function (x) { return MAQUINAS_CARDIO.indexOf(x) >= 0; });
+  if (t === 'cardio' && maqs.length && q.cardioEnMaquina !== false) t = 'maquina';
+  return t;
 }
 // ===== FIN FF-COMPARTIDO =====
 
@@ -155,15 +162,15 @@ function tipoSesion(q, diaSemana) {
   const COL = {
     piel: '#f2c3a0', pielF: '#dea582', camisa: '#6d4aff', camisaF: '#5536e0', short: '#2c2e48', shortF: '#20223a',
     tenis: '#3b3f63', tenisF: '#2c2f4d', suela: '#3a3d5c', pelo: '#2d2219', mat: '#e7e1fb', piso: '#e4e6ee', sombra: 'rgba(30,30,60,.10)',
-    pesa: '#3a3d5c', silla: '#c9a27a', sillaF: '#a8835e'
+    pesa: '#3a3d5c', silla: '#c9a27a', sillaF: '#a8835e', maq: '#565a7a', maqO: '#2c2e48', maqC: '#8f94b5', pantalla: '#9fd8ff', pared: '#d9dbe6'
   };
   const rad = d => d * Math.PI / 180;
   const abajo = a => [Math.sin(rad(a)), Math.cos(rad(a))];      // 0° = hacia abajo, + = hacia el frente
   const arriba = t => [Math.sin(rad(t)), -Math.cos(rad(t))];    // 0° = hacia arriba
   const mas = (p, v, k) => [p[0] + v[0] * k, p[1] + v[1] * k];
   const angDe = (a, b) => Math.atan2(b[0] - a[0], b[1] - a[1]) * 180 / Math.PI;
-  const CAMPOS = ['hx', 'hy', 't', 'hd', 'nu', 'nf', 'fu', 'ff', 'nt', 'ns', 'ft', 'fs', 'fN', 'fF', 'air'];
-  const BASE = { hx: 150, hy: 115, t: 0, hd: 0, nu: 0, nf: 0, fu: 0, ff: 0, nt: 0, ns: 0, ft: 0, fs: 0, fN: null, fF: null, air: 0 };
+  const CAMPOS = ['hx', 'hy', 't', 'hd', 'nu', 'nf', 'fu', 'ff', 'nt', 'ns', 'ft', 'fs', 'fN', 'fF', 'air', 'ax', 'ay', 'bx', 'by', 'lx', 'ly', 'mx', 'my'];
+  const BASE = { hx: 150, hy: 115, t: 0, hd: 0, nu: 0, nf: 0, fu: 0, ff: 0, nt: 0, ns: 0, ft: 0, fs: 0, fN: null, fF: null, air: 0, ax: null, ay: null, bx: null, by: null, lx: null, ly: null, mx: null, my: null };
 
   // Cinemática inversa de 2 segmentos
   function ik(raiz, obj, a, b, s) {
@@ -184,7 +191,8 @@ function tipoSesion(q, diaSemana) {
     while (i < kf.length - 2 && fase > kf[i + 1].k) i++;
     const a = kf[i], b = kf[i + 1];
     let u = (fase - a.k) / ((b.k - a.k) || 1);
-    u = (1 - Math.cos(Math.PI * Math.max(0, Math.min(1, u)))) / 2;
+    u = Math.max(0, Math.min(1, u));
+    if (!spec.lineal) u = (1 - Math.cos(Math.PI * u)) / 2;
     const p = {};
     CAMPOS.forEach(c => {
       const va = a[c], vb = b[c];
@@ -210,12 +218,17 @@ function tipoSesion(q, diaSemana) {
     J.HF = [J.H[0] + FAR[0], J.H[1] + FAR[1]];
     J.SF = [J.S[0] + FAR[0], J.S[1] + FAR[1]];
     const brazo = (raiz, u, f, clave) => {
-      const t = spec.ik && spec.ik[clave];
+      let t = spec.ik && spec.ik[clave];
+      if (clave === 'nA' && p.ax !== null) t = [p.ax, p.ay, spec.bendA || 1];
+      if (clave === 'fA' && p.bx !== null) t = [p.bx, p.by, spec.bendA || 1];
+      else if (clave === 'fA' && p.ax !== null) t = [p.ax + FAR[0], p.ay + FAR[1], spec.bendA || 1];
       if (t) { const r = ik(raiz, t, LEN.ua, LEN.fa, t[2]); return r; }
       const e = mas(raiz, abajo(u), LEN.ua); return [e, mas(e, abajo(f), LEN.fa)];
     };
     const pierna = (raiz, th, sh, clave, pieFijo, modo) => {
-      const t = spec.ik && spec.ik[clave];
+      let t = spec.ik && spec.ik[clave];
+      if (clave === 'nL' && p.lx !== null) t = [p.lx, p.ly, spec.bendL || -1];
+      if (clave === 'fL' && p.mx !== null) t = [p.mx, p.my, spec.bendL || -1];
       let k, a;
       if (t) { [k, a] = ik(raiz, [t[0], t[1] + p.air], LEN.th, LEN.sh, t[2]); }
       else { k = mas(raiz, abajo(th), LEN.th); a = mas(k, abajo(sh), LEN.sh); }
@@ -268,12 +281,44 @@ function tipoSesion(q, diaSemana) {
     const props = spec.props || [];
     el('rect', { x: -300, y: G, width: 900, height: 60, fill: COL.piso }, svg);
     if (props.includes('mat')) el('rect', { x: 22, y: G - 4, width: 256, height: 8, rx: 4, fill: COL.mat }, svg);
-    else P.sombra = el('ellipse', { cx: 150, cy: G, rx: 46, ry: 5, fill: COL.sombra }, svg);
+    else if (!['caminadora', 'bici', 'remo', 'escaladora', 'eliptica', 'bodycrunch'].some(x => props.includes(x))) P.sombra = el('ellipse', { cx: 150, cy: G, rx: 46, ry: 5, fill: COL.sombra }, svg);
     if (props.includes('silla')) {
       el('rect', { x: 38, y: 86, width: 9, height: 114, rx: 3, fill: COL.sillaF }, svg);
       el('rect', { x: 102, y: 156, width: 7, height: 44, rx: 3, fill: COL.sillaF }, svg);
       el('rect', { x: 36, y: 148, width: 78, height: 10, rx: 4, fill: COL.silla }, svg);
     }
+    const L2 = (x1, y1, x2, y2, c, w) => el('line', { x1, y1, x2, y2, stroke: c, 'stroke-width': w, 'stroke-linecap': 'round' }, svg);
+    const R2 = (x, y, w, h, c, rx) => el('rect', { x, y, width: w, height: h, rx: rx === undefined ? 3 : rx, fill: c }, svg);
+    const C2 = (cx, cy, r, c) => el('circle', { cx, cy, r, fill: c }, svg);
+    if (props.includes('pared')) R2(96, 10, 14, 190, COL.pared, 0);
+    if (props.includes('caminadora')) {
+      R2(58, 185, 184, 13, COL.maqO, 6); R2(62, 182, 176, 5, COL.maq, 2);
+      L2(229, 190, 214, 100, COL.maq, 8); R2(194, 84, 44, 18, COL.maq, 6); R2(201, 88, 30, 9, COL.pantalla, 2); L2(214, 124, 176, 126, COL.maqC, 6);
+    }
+    if (props.includes('bici')) {
+      R2(86, 194, 154, 7, COL.maq, 3); L2(134, 128, 146, 196, COL.maq, 7); L2(144, 164, 205, 166, COL.maq, 7);
+      C2(205, 166, 24, COL.maqO); C2(205, 166, 8, COL.maqC); L2(208, 162, 198, 98, COL.maq, 7); L2(188, 95, 207, 95, COL.maqO, 7);
+      R2(114, 122, 34, 7, COL.maqO, 3); C2(168, 170, 6, COL.maqC);
+    }
+    if (props.includes('remo')) {
+      L2(44, 191, 252, 191, COL.maq, 6); L2(60, 191, 60, 199, COL.maq, 6); L2(240, 191, 240, 199, COL.maq, 6);
+      C2(252, 168, 22, COL.maqO); C2(252, 168, 7, COL.maqC); L2(208, 188, 219, 162, COL.maqC, 7);
+    }
+    if (props.includes('escaladora')) {
+      R2(58, 192, 184, 8, COL.maq, 3); R2(108, 184, 84, 9, COL.maqO, 2); R2(128, 172, 74, 9, COL.maq, 2); R2(148, 160, 58, 9, COL.maqC, 2);
+      L2(206, 194, 197, 96, COL.maq, 8); R2(182, 82, 32, 15, COL.maq, 5); R2(187, 85, 22, 8, COL.pantalla, 2); L2(198, 106, 168, 108, COL.maqC, 6);
+    }
+    if (props.includes('eliptica')) {
+      R2(58, 194, 184, 7, COL.maq, 3); C2(78, 176, 17, COL.maqO); C2(78, 176, 6, COL.maqC); L2(80, 190, 214, 192, COL.maq, 6); L2(218, 196, 206, 92, COL.maq, 8);
+      R2(194, 80, 28, 14, COL.maq, 5);
+    }
+    if (props.includes('bodycrunch')) {
+      R2(88, 194, 126, 7, COL.maq, 3); L2(140, 158, 140, 196, COL.maq, 8); L2(110, 152, 98, 88, COL.maqO, 11); R2(110, 149, 62, 10, COL.maqO, 4);
+      L2(196, 186, 216, 186, COL.maqC, 7); L2(206, 196, 206, 186, COL.maq, 6); C2(102, 80, 5, COL.maqC);
+    }
+    if (spec.manijas) { P.manN = L2(0, 0, 0, 0, COL.maqC, 5); P.manF = L2(0, 0, 0, 0, COL.maq, 5); }
+    if (spec.cuerda) P.cuerda = L2(0, 0, 0, 0, '#9aa0bf', 2.5);
+    if (spec.asiento) P.asiento = R2(0, 0, spec.asiento.w, 7, COL.maqO, 3);
     const linea = (color, ancho) => el('line', { stroke: color, 'stroke-width': ancho, 'stroke-linecap': 'round' }, svg);
     const poli = (color, ancho) => el('polyline', { fill: 'none', stroke: color, 'stroke-width': ancho, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }, svg);
     const circ = (color, r) => el('circle', { r, fill: color }, svg);
@@ -337,6 +382,9 @@ function tipoSesion(q, diaSemana) {
     if (P.pesa) P.pesa.setAttribute('transform', `translate(${J.W[0].toFixed(1)},${J.W[1].toFixed(1)})`);
     if (P.pesaF) P.pesaF.setAttribute('transform', `translate(${J.WF[0].toFixed(1)},${J.WF[1].toFixed(1)})`);
     if (P.sombra) { P.sombra.setAttribute('cx', J.H[0]); }
+    if (P.manN) { const m = spec.manijas; setL(P.manN, m, J.W); setL(P.manF, [m[0] - 4, m[1] - 2], J.WF); }
+    if (P.cuerda) setL(P.cuerda, spec.cuerda, J.W);
+    if (P.asiento) { P.asiento.setAttribute('x', (J.H[0] - spec.asiento.w / 2).toFixed(1)); P.asiento.setAttribute('y', (J.H[1] + spec.asiento.dy).toFixed(1)); }
   }
 
   function poseEn(spec, fase) {
@@ -348,11 +396,12 @@ function tipoSesion(q, diaSemana) {
   // ---------- Registro de animaciones activas ----------
   const activas = [];
   let corriendo = false;
+  const obs = typeof IntersectionObserver !== 'undefined' ? new IntersectionObserver(es => es.forEach(e => { e.target._vis = e.isIntersecting; }), { rootMargin: '80px' }) : null;
   function tick(now) {
     for (let i = activas.length - 1; i >= 0; i--) {
       const a = activas[i];
-      if (!a.svg.isConnected) { activas.splice(i, 1); continue; }
-      if (a.svg.dataset.pausa === '1') continue;
+      if (!a.svg.isConnected) { activas.splice(i, 1); if (obs) obs.unobserve(a.svg); continue; }
+      if (a.svg.dataset.pausa === '1' || a.svg._vis === false) continue;
       const fase = (((now - a.t0) / 1000) / a.spec.dur) % 1;
       dibujar(a.P, a.spec, poseEn(a.spec, fase));
     }
@@ -366,6 +415,7 @@ function tipoSesion(q, diaSemana) {
       const P = construir(svg, spec);
       dibujar(P, spec, poseEn(spec, 0));
       activas.push({ svg, spec, P, t0: performance.now() - Math.random() * 300 });
+      if (obs) obs.observe(svg);
     });
     if (activas.length && !corriendo) { corriendo = true; requestAnimationFrame(tick); }
   }
@@ -524,17 +574,166 @@ function tipoSesion(q, diaSemana) {
       kf: [{ k: 0, hy: 120, nt: 25, ns: 18, ft: -22, fs: -45, nu: -22, nf: -10, fu: 22, ff: 35 }, { k: 0.25, hy: 114, nt: -2, ns: -2, ft: 12, fs: -35, nu: 0, nf: 10, fu: 0, ff: 10 },
         { k: 0.5, hy: 120, nt: -22, ns: -45, ft: 25, fs: 18, nu: 22, nf: 35, fu: -22, ff: -10 }, { k: 0.75, hy: 114, nt: 12, ns: -35, ft: -2, fs: -2, nu: 0, nf: 10, fu: 0, ff: 10 },
         { k: 1, hy: 120, nt: 25, ns: 18, ft: -22, fs: -45, nu: -22, nf: -10, fu: 22, ff: 35 }]
+    },
+
+    // ===== MÁQUINAS DE CARDIO =====
+    maq_caminadora: {
+      nombre: 'Caminadora', grupo: 'Máquina cardio', musculos: 'Piernas, glúteos, corazón', met: 5, impacto: 'bajo', nivel: 1, evitar: [], equipo: 'caminadora',
+      tips: ['Sube la inclinación antes que la velocidad', 'No te agarres de los barandales', 'Pasos cortos y rápidos, espalda derecha'],
+      reps: 'Por tiempo', vista: 'lado', dur: 1.2, pie: 'rel', props: ['caminadora'],
+      kf: [{ k: 0, hy: 109, nt: 25, ns: 18, ft: -22, fs: -45, nu: -22, nf: -10, fu: 22, ff: 35 }, { k: 0.25, hy: 103, nt: -2, ns: -2, ft: 12, fs: -35, nu: 0, nf: 10, fu: 0, ff: 10 },
+        { k: 0.5, hy: 109, nt: -22, ns: -45, ft: 25, fs: 18, nu: 22, nf: 35, fu: -22, ff: -10 }, { k: 0.75, hy: 103, nt: 12, ns: -35, ft: -2, fs: -2, nu: 0, nf: 10, fu: 0, ff: 10 },
+        { k: 1, hy: 109, nt: 25, ns: 18, ft: -22, fs: -45, nu: -22, nf: -10, fu: 22, ff: 35 }]
+    },
+    maq_bicicleta: {
+      nombre: 'Bicicleta estática', grupo: 'Máquina cardio', musculos: 'Cuádriceps, glúteos, corazón', met: 6.8, impacto: 'bajo', nivel: 1, evitar: [], equipo: 'bicicleta',
+      tips: ['Asiento a la altura de la cadera', 'Rodilla casi estirada abajo, sin bloquearla', 'Controla la resistencia, no solo la velocidad'],
+      reps: 'Por tiempo', vista: 'lado', dur: 1, pie: 'rel', props: ['bici'], lineal: true, bendA: -1,
+      kf: Array.from({ length: 9 }, (_, i) => { const a = i * Math.PI / 4; const k = { k: i / 8, lx: 168 + 16 * Math.cos(a), ly: 170 + 16 * Math.sin(a), mx: 164 + 16 * Math.cos(a + Math.PI), my: 168 + 16 * Math.sin(a + Math.PI) }; if (!i) Object.assign(k, { hx: 132, hy: 117, t: 24, ax: 196, ay: 95 }); return k; })
+    },
+    maq_remadora: {
+      nombre: 'Remadora', grupo: 'Máquina cardio', musculos: 'Espalda, piernas, brazos, core', met: 7, impacto: 'bajo', nivel: 1, evitar: ['espalda'], equipo: 'remadora',
+      tips: ['Orden: piernas, luego espalda, luego brazos', 'Al regresar: brazos, espalda y al final rodillas', 'Espalda recta, no jorobada'],
+      reps: 'Por tiempo', vista: 'lado', dur: 2.6, pie: 'rel', props: ['remo'], asiento: { w: 30, dy: 6 }, cuerda: [240, 162], bendA: -1,
+      ik: { nL: [212, 174, -1], fL: [208, 172, -1] },
+      kf: [{ k: 0, hx: 160, hy: 172, t: 24, ax: 218, ay: 165 }, { k: 0.4, hx: 132, t: -24, ax: 150, ay: 145 }, { k: 0.55, hx: 134, t: 8, ax: 200, ay: 156 }, { k: 1, hx: 160, t: 24, ax: 218, ay: 165 }]
+    },
+    maq_escaladora: {
+      nombre: 'Escaladora', grupo: 'Máquina cardio', musculos: 'Glúteos, piernas, corazón', met: 8.8, impacto: 'bajo', nivel: 1, evitar: ['rodilla'], equipo: 'escaladora',
+      tips: ['Apoya todo el pie en cada escalón', 'Toca los barandales solo para equilibrio', 'Torso ligeramente inclinado, abdomen firme'],
+      reps: 'Por tiempo', vista: 'lado', dur: 1.3, pie: 'flat', props: ['escaladora'], bendA: -1,
+      kf: [{ k: 0, hy: 104, t: 10, ax: 178, ay: 106, nt: 0, ns: 0, ft: 58, fs: -14 }, { k: 0.5, nt: 58, ns: -14, ft: 0, fs: 0 }, { k: 1, nt: 0, ns: 0, ft: 58, fs: -14 }]
+    },
+    maq_eliptica: {
+      nombre: 'Elíptica', grupo: 'Máquina cardio', musculos: 'Cuerpo completo, corazón', met: 5, impacto: 'bajo', nivel: 1, evitar: [], equipo: 'eliptica',
+      tips: ['Empuja y jala las manijas con los brazos', 'Talones apoyados en los pedales', 'Mantén el torso derecho'],
+      reps: 'Por tiempo', vista: 'lado', dur: 1.6, pie: 'flat', props: ['eliptica'], lineal: true, manijas: [204, 132], bendA: -1,
+      kf: Array.from({ length: 9 }, (_, i) => { const a = i * Math.PI / 4, c = Math.cos(a), sn = Math.sin(a); const k = { k: i / 8, lx: 150 + 24 * c, ly: 183 + 7 * sn, mx: 146 - 24 * c, my: 181 - 7 * sn, ax: 186 - 12 * c, ay: 112, bx: 182 + 12 * c, by: 111 }; if (!i) Object.assign(k, { hy: 107, t: 6 }); return k; })
+    },
+    maq_bodycrunch: {
+      nombre: 'Body Crunch', grupo: 'Máquina cardio', musculos: 'Abdomen, espalda, brazos, piernas', met: 6, impacto: 'bajo', nivel: 1, evitar: ['espalda'], equipo: 'bodycrunch',
+      tips: ['Jala las manijas mientras subes las rodillas', 'Exhala al contraer el abdomen', 'Regresa lento y controlado'],
+      reps: 'Por tiempo', vista: 'lado', dur: 2.4, pie: 'rel', props: ['bodycrunch'], manijas: [102, 80],
+      kf: [{ k: 0, hx: 140, hy: 142, t: -12, nu: 165, nf: 172, fu: 165, ff: 172, nt: 80, ns: 8, ft: 80, fs: 8 }, { k: 0.45, t: 28, nu: 70, nf: 150, fu: 70, ff: 150, nt: 112, ns: -28, ft: 112, fs: -28 }, { k: 0.6 },
+        { k: 1, t: -12, nu: 165, nf: 172, fu: 165, ff: 172, nt: 80, ns: 8, ft: 80, fs: 8 }]
+    },
+
+    // ===== CON MANCUERNAS =====
+    sentadilla_goblet: {
+      nombre: 'Sentadilla con mancuerna', grupo: 'Piernas', musculos: 'Cuádriceps, glúteos, core', met: 6, impacto: 'bajo', nivel: 1, evitar: [], equipo: 'mancuernas',
+      tips: ['Sostén la mancuerna pegada al pecho', 'Baja hasta que los muslos queden paralelos', 'Codos por dentro de las rodillas'],
+      reps: '12', vista: 'lado', dur: 3, pie: 'flat', props: ['mancuernas'], ik: { nL: [150, 195, -1], fL: [146, 195, -1] },
+      kf: [{ k: 0, nu: 22, nf: 168, fu: 22, ff: 168 }, { k: 0.45, hx: 128, hy: 158, t: 36, nu: 58, nf: 200, fu: 58, ff: 200 }, { k: 0.6 }, { k: 1, hx: 150, hy: 115, t: 0, nu: 22, nf: 168, fu: 22, ff: 168 }]
+    },
+    peso_muerto: {
+      nombre: 'Peso muerto rumano', grupo: 'Piernas', musculos: 'Isquiotibiales, glúteos, espalda baja', met: 5, impacto: 'bajo', nivel: 1, evitar: ['espalda'], equipo: 'mancuernas',
+      tips: ['Rodillas ligeramente flexionadas', 'Lleva la cadera hacia atrás con la espalda recta', 'Baja las pesas pegadas a las piernas'],
+      reps: '12', vista: 'lado', dur: 3, pie: 'flat', props: ['mancuernas'], ik: { nL: [150, 195, -1], fL: [146, 195, -1] },
+      kf: [{ k: 0, hx: 150, hy: 116, t: 0, nu: 2, nf: 2, fu: 2, ff: 2 }, { k: 0.45, hx: 132, hy: 122, t: 68, nu: -2, nf: -2, fu: -2, ff: -2 }, { k: 0.6 }, { k: 1, hx: 150, hy: 116, t: 0, nu: 2, nf: 2, fu: 2, ff: 2 }]
+    },
+    press_pecho: {
+      nombre: 'Press de pecho en piso', grupo: 'Pecho y brazos', musculos: 'Pecho, tríceps, hombros', met: 4.5, impacto: 'bajo', nivel: 1, evitar: ['hombro'], equipo: 'mancuernas',
+      tips: ['Acostado, rodillas flexionadas', 'Baja hasta que los codos toquen el piso', 'Empuja las pesas hacia arriba sin chocarlas'],
+      reps: '12', vista: 'lado', dur: 2.6, pie: 'flat', props: ['mat', 'mancuernas'], ik: { nL: [196, 195, -1], fL: [192, 194, -1] },
+      kf: [{ k: 0, hx: 150, hy: 187, t: -90, nu: 92, nf: 180, fu: 92, ff: 180 }, { k: 0.45, nu: 178, nf: 178, fu: 178, ff: 178 }, { k: 0.6 }, { k: 1, nu: 92, nf: 180, fu: 92, ff: 180 }]
+    },
+    curl_biceps: {
+      nombre: 'Curl de bíceps', grupo: 'Brazos', musculos: 'Bíceps, antebrazos', met: 3.5, impacto: 'bajo', nivel: 1, evitar: [], equipo: 'mancuernas',
+      tips: ['Codos pegados al cuerpo', 'Sube las pesas sin balancear la espalda', 'Baja lento en 2 segundos'],
+      reps: '12', vista: 'lado', dur: 2.4, pie: 'flat', props: ['mancuernas'], ik: { nL: [150, 195, -1], fL: [146, 195, -1] },
+      kf: [{ k: 0, nu: 2, nf: 4, fu: 2, ff: 4 }, { k: 0.45, nf: 148, ff: 148 }, { k: 0.6 }, { k: 1, nf: 4, ff: 4 }]
+    },
+    ext_triceps: {
+      nombre: 'Extensión de tríceps', grupo: 'Brazos', musculos: 'Tríceps', met: 3.5, impacto: 'bajo', nivel: 1, evitar: ['hombro'], equipo: 'mancuernas',
+      tips: ['Sostén una mancuerna con las dos manos sobre la cabeza', 'Baja detrás de la cabeza doblando solo los codos', 'Codos apuntando al frente'],
+      reps: '12', vb: '30 -12 240 222', vista: 'lado', dur: 2.6, pie: 'flat', props: ['mancuernas'], ik: { nL: [150, 195, -1], fL: [146, 195, -1] },
+      kf: [{ k: 0, nu: 172, nf: 176, fu: 172, ff: 176 }, { k: 0.45, nf: 330, ff: 330 }, { k: 0.6 }, { k: 1, nf: 176, ff: 176 }]
+    },
+    laterales: {
+      nombre: 'Elevaciones laterales', grupo: 'Hombros', musculos: 'Hombros', met: 3.5, impacto: 'bajo', nivel: 1, evitar: ['hombro'], equipo: 'mancuernas',
+      tips: ['Brazos casi estirados', 'Sube hasta la altura de los hombros', 'Baja lento, sin columpiarte'],
+      reps: '12', vista: 'frente', dur: 2.4, props: ['mancuernas'],
+      kf: [{ k: 0, nu: 8, nf: 12, fu: 8, ff: 12, nt: 4, ns: 4, ft: 4, fs: 4 }, { k: 0.45, nu: 86, nf: 92, fu: 86, ff: 92 }, { k: 0.6 }, { k: 1, nu: 8, nf: 12, fu: 8, ff: 12 }]
+    },
+    zancada_mancuernas: {
+      nombre: 'Zancada con mancuernas', grupo: 'Piernas', musculos: 'Cuádriceps, glúteos', met: 6, impacto: 'bajo', nivel: 1, evitar: ['rodilla'], equipo: 'mancuernas',
+      tips: ['Pesas a los lados del cuerpo', 'Baja la rodilla de atrás casi al piso', 'Cambia de pierna a la mitad'],
+      reps: '10 por pierna', vista: 'lado', dur: 3, pieN: 'flat', pieF: 'rel', props: ['mancuernas'], ik: { nL: [182, 195, -1], fL: [110, 192, -1] },
+      kf: [{ k: 0, hx: 148, hy: 121, t: 4, nu: 2, nf: 2, fu: 2, ff: 2 }, { k: 0.45, hx: 146, hy: 158 }, { k: 0.6 }, { k: 1, hx: 148, hy: 121 }]
+    },
+
+    // ===== MÁS PESO CORPORAL =====
+    bicicleta_abdominal: {
+      nombre: 'Bicicleta abdominal', grupo: 'Core', musculos: 'Abdomen, oblicuos', met: 4, impacto: 'bajo', nivel: 1, evitar: [],
+      tips: ['Hombros despegados del piso', 'Lleva una rodilla al pecho y estira la otra', 'Alterna sin prisa, abdomen apretado'],
+      reps: '20 por lado', vista: 'lado', dur: 1.6, pie: 'rel', props: ['mat'],
+      kf: [{ k: 0, hx: 150, hy: 187, t: -68, hd: 10, nu: 108, nf: 108, fu: 108, ff: 108, nt: 200, ns: 110, ft: 102, fs: 100 }, { k: 0.5, nt: 102, ns: 100, ft: 200, fs: 110 }, { k: 1, nt: 200, ns: 110, ft: 102, fs: 100 }]
+    },
+    elevacion_piernas: {
+      nombre: 'Elevación de piernas', grupo: 'Core', musculos: 'Abdomen bajo', met: 3.8, impacto: 'bajo', nivel: 1, evitar: ['espalda'],
+      tips: ['Acostado, manos a los lados', 'Sube las piernas estiradas hasta vertical', 'Baja lento sin arquear la espalda'],
+      reps: '12', vista: 'lado', dur: 3, pie: 'rel', props: ['mat'],
+      kf: [{ k: 0, hx: 150, hy: 187, t: -90, nu: 90, nf: 90, fu: 90, ff: 90, nt: 94, ns: 94, ft: 94, fs: 94 }, { k: 0.45, nt: 178, ns: 178, ft: 178, fs: 178 }, { k: 0.6 }, { k: 1, nt: 94, ns: 94, ft: 94, fs: 94 }]
+    },
+    sentadilla_pared: {
+      nombre: 'Sentadilla en pared', grupo: 'Piernas', musculos: 'Cuádriceps, glúteos', met: 3.5, impacto: 'bajo', nivel: 1, evitar: ['rodilla'],
+      tips: ['Espalda pegada a la pared', 'Muslos paralelos al piso', 'Sostén respirando normal'],
+      reps: 'Sostener', vista: 'lado', dur: 3, pie: 'flat', props: ['pared'],
+      kf: [{ k: 0, hx: 128, hy: 155, t: 0, nu: 25, nf: 70, fu: 25, ff: 70, nt: 90, ns: 0, ft: 90, fs: 0 }, { k: 0.5, hy: 156 }, { k: 1, hy: 155 }]
+    },
+    patada_gluteo: {
+      nombre: 'Patada de glúteo', grupo: 'Glúteos', musculos: 'Glúteos, isquiotibiales', met: 3.5, impacto: 'bajo', nivel: 1, evitar: [],
+      tips: ['En cuatro puntos: manos bajo hombros, rodillas bajo cadera', 'Sube el pie hacia el techo con la rodilla doblada', 'Cambia de pierna a la mitad'],
+      reps: '15 por pierna', vista: 'lado', dur: 2.4, pie: 'rel', props: ['mat'], ik: { nA: [180, 196, 1], fA: [176, 195, 1] },
+      kf: [{ k: 0, hx: 130, hy: 148, t: 85, nt: 0, ns: -90, ft: 0, fs: -90 }, { k: 0.45, nt: -100, ns: -185 }, { k: 0.6 }, { k: 1, nt: 0, ns: -90 }]
+    },
+    boxeo: {
+      nombre: 'Box de sombra', grupo: 'Cardio', musculos: 'Hombros, brazos, core', met: 7, impacto: 'bajo', nivel: 1, evitar: ['hombro'],
+      tips: ['Guardia arriba, rodillas suaves', 'Lanza golpes rectos alternando', 'Gira un poco la cadera en cada golpe'],
+      reps: '40 golpes', vista: 'lado', dur: 1.2, pie: 'flat', ik: { nL: [166, 195, -1], fL: [128, 195, -1] },
+      kf: [{ k: 0, hx: 148, hy: 117, t: 5, nu: 86, nf: 88, fu: 20, ff: 160 }, { k: 0.25, hy: 114, nu: 20, nf: 160, fu: 20, ff: 160 }, { k: 0.5, hy: 117, nu: 20, nf: 160, fu: 86, ff: 88 },
+        { k: 0.75, hy: 114, nu: 20, nf: 160, fu: 20, ff: 160 }, { k: 1, hy: 117, nu: 86, nf: 88, fu: 20, ff: 160 }]
+    },
+    sentadilla_sumo: {
+      nombre: 'Sentadilla sumo', grupo: 'Piernas', musculos: 'Glúteos, aductores, cuádriceps', met: 5, impacto: 'bajo', nivel: 1, evitar: [],
+      tips: ['Pies más abiertos que los hombros, puntas afuera', 'Baja con las rodillas hacia afuera', 'Torso derecho'],
+      reps: '15', vista: 'frente', dur: 3,
+      kf: [{ k: 0, hy: 121, nu: 18, nf: -140, fu: 18, ff: -140, nt: 22, ns: 22, ft: 22, fs: 22 }, { k: 0.45, hy: 137, nt: 62, ns: 12, ft: 62, fs: 12 }, { k: 0.6 }, { k: 1, hy: 121, nt: 22, ns: 22, ft: 22, fs: 22 }]
     }
   };
 
   // ---------- Generador de rutinas ----------
   const PLANTILLAS = {
-    fuerzaA: [['sentadilla'], ['lagartija', 'lagartija_rodillas', 'plancha'], ['zancada', 'puente'], ['puente', 'talones'], ['press_hombro', 'fondos_silla', 'superman', 'talones'], ['plancha', 'crunch']],
-    fuerzaB: [['remo', 'superman', 'puente'], ['zancada', 'sentadilla'], ['fondos_silla', 'lagartija_rodillas', 'talones'], ['crunch', 'plancha'], ['superman', 'puente', 'talones'], ['escaladores', 'marcha']],
-    cardio: [['jumping_jacks', 'step_jacks'], ['rodillas_arriba', 'marcha'], ['sentadilla_salto', 'sentadilla'], ['escaladores', 'step_jacks'], ['jumping_jacks', 'marcha', 'talones'], ['plancha', 'crunch']],
-    core: [['plancha'], ['crunch'], ['puente'], ['superman', 'talones'], ['escaladores', 'marcha'], ['plancha', 'crunch']]
+    fuerzaA: [['sentadilla_goblet', 'sentadilla'], ['press_pecho', 'lagartija', 'lagartija_rodillas', 'plancha'], ['peso_muerto', 'zancada', 'puente'], ['zancada_mancuernas', 'sentadilla_sumo', 'puente', 'talones'],
+      ['press_hombro', 'fondos_silla', 'superman', 'talones'], ['plancha', 'crunch', 'elevacion_piernas']],
+    fuerzaB: [['remo', 'superman', 'patada_gluteo'], ['peso_muerto', 'zancada', 'sentadilla'], ['curl_biceps', 'fondos_silla', 'lagartija_rodillas'], ['ext_triceps', 'fondos_silla', 'talones'],
+      ['laterales', 'superman', 'puente'], ['bicicleta_abdominal', 'crunch', 'plancha'], ['escaladores', 'marcha']],
+    pierna: [['sentadilla_goblet', 'sentadilla'], ['peso_muerto', 'puente'], ['zancada_mancuernas', 'zancada', 'sentadilla_sumo'], ['sentadilla_sumo', 'patada_gluteo'], ['patada_gluteo', 'puente'],
+      ['sentadilla_pared', 'talones'], ['talones', 'marcha']],
+    superior: [['press_pecho', 'lagartija', 'lagartija_rodillas'], ['remo', 'superman'], ['press_hombro', 'fondos_silla', 'lagartija_rodillas'], ['curl_biceps', 'plancha'], ['ext_triceps', 'fondos_silla'],
+      ['laterales', 'boxeo'], ['plancha', 'superman']],
+    cardio: [['jumping_jacks', 'step_jacks'], ['boxeo', 'marcha'], ['rodillas_arriba', 'marcha'], ['sentadilla_salto', 'sentadilla_sumo', 'sentadilla'], ['escaladores', 'step_jacks'],
+      ['bicicleta_abdominal', 'plancha'], ['jumping_jacks', 'talones']],
+    core: [['plancha'], ['bicicleta_abdominal', 'crunch'], ['elevacion_piernas', 'puente'], ['superman', 'patada_gluteo', 'talones'], ['escaladores', 'marcha'], ['sentadilla_pared', 'crunch'], ['crunch', 'plancha']]
   };
   const TIEMPOS = { 1: [30, 30], 2: [40, 20], 3: [45, 15] };
+  const MAQUINAS = {
+    caminadora: { ej: 'maq_caminadora', nombre: 'Caminadora', emoji: '🏃', met: 5,
+      suave: 'Camina 4.5–5 km/h, inclinación 1–2%', mod: ['Camina 5–5.5 km/h, inclinación 5–8%', 'Camina 5.5–6 km/h, inclinación 8–12%', 'Camina 6 km/h, inclinación 12–15%'],
+      fuerte: ['Camina 5.5 km/h, inclinación 10–12%', 'Trota 7.5–8.5 km/h, sin inclinación', 'Corre 9–11 km/h'] },
+    bicicleta: { ej: 'maq_bicicleta', nombre: 'Bicicleta estática', emoji: '🚴', met: 6.8,
+      suave: 'Resistencia baja, 60–70 rpm', mod: ['Resistencia media-baja, 70–80 rpm', 'Resistencia media, 75–85 rpm', 'Resistencia media-alta, 80–90 rpm'],
+      fuerte: ['Resistencia media, 85 rpm', 'Resistencia alta, 85–95 rpm', 'Resistencia alta, de pie, 90+ rpm'] },
+    remadora: { ej: 'maq_remadora', nombre: 'Remadora', emoji: '🚣', met: 7,
+      suave: '18–20 golpes por minuto, suave', mod: ['20–22 golpes/min, técnica limpia', '22–24 golpes/min, empuja con piernas', '24–26 golpes/min'],
+      fuerte: ['24 golpes/min con fuerza', '26–30 golpes/min, máxima potencia', '30+ golpes/min, sprint'] },
+    escaladora: { ej: 'maq_escaladora', nombre: 'Escaladora', emoji: '🪜', met: 8.8,
+      suave: 'Nivel 2–3, ritmo cómodo', mod: ['Nivel 3–4', 'Nivel 5–6', 'Nivel 6–7'], fuerte: ['Nivel 5', 'Nivel 7–8, sin recargarte', 'Nivel 9+, sin recargarte'] },
+    eliptica: { ej: 'maq_eliptica', nombre: 'Elíptica', emoji: '🌀', met: 5,
+      suave: 'Resistencia 2–3, ritmo cómodo', mod: ['Resistencia 3–4, empuja y jala los brazos', 'Resistencia 4–6', 'Resistencia 6–8'], fuerte: ['Resistencia 5, ritmo rápido', 'Resistencia 7+, ritmo rápido', 'Resistencia 9+, sprint'] },
+    bodycrunch: { ej: 'maq_bodycrunch', nombre: 'Body Crunch', emoji: '💥', met: 6, series: true,
+      suave: 'Movimiento lento y controlado', mod: ['Ritmo constante, 15–20 repeticiones', 'Ritmo constante, 20–25 repeticiones', '25–30 repeticiones'], fuerte: ['Ritmo constante', 'Ritmo rápido', 'Máxima velocidad con buena técnica'] }
+  };
 
   function permitido(id, cfg, usados) {
     const e = EJ[id];
@@ -542,63 +741,128 @@ function tipoSesion(q, diaSemana) {
     if (e.nivel > cfg.nivel) return false;
     if (cfg.bajoImpacto && e.impacto === 'alto') return false;
     if (e.equipo === 'mancuernas' && !cfg.mancuernas) return false;
+    if (e.equipo && MAQUINAS[e.equipo] && !cfg.maquinas.includes(e.equipo)) return false;
     if ((e.evitar || []).some(l => cfg.lesiones.includes(l))) return false;
     return true;
   }
 
-  function config(q, perfil) {
+  function equiposDe(q) {
+    const eq = ((q && q.equipos) || []).slice();
+    if (q && (q.equipo === 'mancuernas' || q.equipo === 'gimnasio') && !eq.includes('mancuernas')) eq.push('mancuernas');
+    return eq;
+  }
+  function config(q) {
     const lesiones = (q && q.lesiones) || [];
     const est = (q && +q.estatura) || 165, peso = (q && +q.peso) || 70;
-    const imc = peso / Math.pow(est / 100, 2);
+    const imc = peso / Math.pow(est / 100, 2), eq = equiposDe(q);
     return {
       nivel: { principiante: 1, intermedio: 2, avanzado: 3 }[q && q.nivel] || 1,
-      minutos: +((q && q.minutos) || 30), lesiones,
-      mancuernas: !!(q && (q.equipo === 'mancuernas' || q.equipo === 'gimnasio')),
+      minutos: +((q && q.minutos) || 30), lesiones, equipos: eq,
+      mancuernas: eq.includes('mancuernas'),
+      maquinas: eq.filter(x => MAQUINAS[x]),
       bajoImpacto: !!(q && q.bajoImpacto) || lesiones.includes('rodilla') || imc >= 35,
       peso
     };
   }
 
-  function armarSesion(tipo, q) {
+  /** Bloque de cardio en máquina(s). opts = { maquinas:[...], minutos, modo:'una'|'combinar' } */
+  function pasosMaquina(add, cfg, opts) {
+    let maqs = ((opts && opts.maquinas) || []).filter(m => MAQUINAS[m]);
+    if (!maqs.length) maqs = cfg.maquinas.slice(0, 1);
+    if (!maqs.length) return false;
+    if (opts && opts.modo === 'una') maqs = maqs.slice(0, 1);
+    maqs = maqs.slice(0, 4);
+    const total = Math.max(10, +((opts && opts.minutos) || cfg.minutos)) * 60;
+    const nv = cfg.nivel - 1;
+    const calent = Math.min(300, Math.round(total * 0.15 / 60) * 60), enfr = 180;
+    const principal = total - calent - enfr - 80;
+    const porMaq = Math.max(240, Math.floor(principal / maqs.length / 60) * 60);
+    const M0 = MAQUINAS[maqs[0]];
+    add(M0.ej, calent, 'Calentamiento', { nota: M0.suave, met: M0.met * 0.7, maquina: maqs[0] });
+    maqs.forEach((m, mi) => {
+      const M = MAQUINAS[m];
+      if (M.series) {
+        const rondas = Math.max(3, Math.round(porMaq / 60));
+        for (let r = 1; r <= rondas; r++) {
+          add(M.ej, 45, M.nombre, { nota: M.mod[nv], met: M.met, ronda: r, rondas, maquina: m });
+          add(null, 15, 'Descanso', { ronda: r, rondas });
+        }
+        return;
+      }
+      if (cfg.nivel === 1) { add(M.ej, porMaq, M.nombre, { nota: M.mod[nv], met: M.met, maquina: m }); return; }
+      // Intervalos: intermedio 2' moderado + 1' fuerte; avanzado 1' fuerte + 1' suave
+      const ciclo = cfg.nivel === 2 ? [[120, 'mod'], [60, 'fuerte']] : [[60, 'fuerte'], [60, 'mod']];
+      const largo = ciclo[0][0] + ciclo[1][0], rondas = Math.max(2, Math.floor(porMaq / largo));
+      const resto = porMaq - rondas * largo;
+      if (resto >= 60) add(M.ej, resto, M.nombre, { nota: M.mod[nv], met: M.met, maquina: m });
+      for (let r = 1; r <= rondas; r++) ciclo.forEach(([seg, tipo]) => add(M.ej, seg, M.nombre + (tipo === 'fuerte' ? ' · ¡fuerte!' : ' · moderado'),
+        { nota: tipo === 'fuerte' ? M.fuerte[nv] : M.mod[nv], met: M.met * (tipo === 'fuerte' ? 1.3 : 1), ronda: r, rondas, maquina: m, intenso: tipo === 'fuerte' }));
+    });
+    const Mu = MAQUINAS[maqs[maqs.length - 1]];
+    add(Mu.ej, enfr, 'Enfriamiento', { nota: Mu.suave, met: Mu.met * 0.6, maquina: maqs[maqs.length - 1] });
+    return maqs;
+  }
+
+  function armarSesion(tipo, q, opts) {
     const cfg = config(q);
+    opts = opts || {};
+    if (opts.minutos) cfg.minutos = +opts.minutos;
     const pasos = [];
     const add = (ej, seg, fase, extra) => pasos.push(Object.assign({ ej, seg, fase }, extra || {}));
+    let usadas = null;
+    if (tipo === 'maquina') {
+      usadas = pasosMaquina(add, cfg, { maquinas: opts.maquinas || (q && q.maquinasCardio) || cfg.maquinas, minutos: cfg.minutos, modo: opts.modo || (q && q.cardioModo) || 'combinar' });
+      if (!usadas) tipo = 'cardio';
+      else { add('est_cuadriceps', 40, 'Enfriamiento'); add('est_isquios', 40, 'Enfriamiento'); }
+    }
     if (tipo === 'activo' || tipo === 'descanso') {
-      const min = tipo === 'descanso' ? 20 : Math.max(30, cfg.minutos);
-      add('caminar', min * 60, 'Caminata');
+      const min = opts.minutos ? +opts.minutos : tipo === 'descanso' ? 20 : Math.max(30, cfg.minutos);
+      const enCaminadora = cfg.maquinas.includes('caminadora') && (opts.lugar !== 'calle');
+      add(enCaminadora ? 'maq_caminadora' : 'caminar', min * 60, enCaminadora ? 'Caminadora' : 'Caminata',
+        enCaminadora ? { nota: MAQUINAS.caminadora.mod[Math.max(0, cfg.nivel - 2)], maquina: 'caminadora' } : { nota: 'Paso rápido, como si fueras tarde' });
       add('est_cuadriceps', 40, 'Enfriamiento'); add('est_isquios', 40, 'Enfriamiento');
-    } else {
+    } else if (tipo !== 'maquina') {
       add('marcha', 45, 'Calentamiento'); add('circulos_brazos', 30, 'Calentamiento');
       add(!cfg.bajoImpacto && cfg.nivel >= 2 ? 'jumping_jacks' : 'step_jacks', 30, 'Calentamiento');
-      const [w, r] = TIEMPOS[cfg.nivel];
+      let [w, r] = TIEMPOS[cfg.nivel];
+      if (opts.trabajo) w = +opts.trabajo;
+      if (opts.descanso !== undefined) r = +opts.descanso;
       const n = cfg.minutos <= 20 ? 4 : cfg.minutos < 45 ? 5 : 6;
-      const usados = [];
-      (PLANTILLAS[tipo] || PLANTILLAS.fuerzaA).forEach(op => {
-        if (usados.length >= n) return;
-        const id = op.find(x => permitido(x, cfg, usados));
-        if (id) usados.push(id);
-      });
-      ['sentadilla', 'puente', 'plancha', 'talones', 'marcha', 'crunch'].forEach(x => { if (usados.length < n && permitido(x, cfg, usados)) usados.push(x); });
+      let usados = [];
+      if (tipo === 'libre') usados = (opts.ejercicios || []).filter(id => EJ[id]);
+      else {
+        (PLANTILLAS[tipo] || PLANTILLAS.fuerzaA).forEach(op => {
+          if (usados.length >= n) return;
+          const id = op.find(x => permitido(x, cfg, usados));
+          if (id) usados.push(id);
+        });
+        ['sentadilla', 'puente', 'plancha', 'talones', 'marcha', 'crunch'].forEach(x => { if (usados.length < n && permitido(x, cfg, usados)) usados.push(x); });
+      }
+      if (!usados.length) usados = ['sentadilla', 'plancha', 'marcha'];
       const calent = 105, enfr = 80, entreRondas = 60;
       const porRonda = usados.length * (w + r) + entreRondas;
-      const rondas = Math.max(2, Math.min(6, Math.ceil((cfg.minutos * 60 - calent - enfr) / porRonda - 0.3)));
+      const rondas = opts.rondas ? +opts.rondas : Math.max(2, Math.min(6, Math.ceil((cfg.minutos * 60 - calent - enfr) / porRonda - 0.3)));
       for (let ro = 1; ro <= rondas; ro++) {
         usados.forEach((id, i) => {
-          add(id, w, 'Circuito', { ronda: ro, rondas });
+          const e = EJ[id], maq = e.equipo && MAQUINAS[e.equipo];
+          add(id, maq ? Math.max(w, 60) : w, 'Circuito', { ronda: ro, rondas, nota: maq ? MAQUINAS[e.equipo].mod[cfg.nivel - 1] : null });
           const ultimo = i === usados.length - 1;
-          if (!(ultimo && ro === rondas)) add(null, ultimo ? entreRondas : r, ultimo ? 'Descanso entre rondas' : 'Descanso', { ronda: ro, rondas });
+          if (!(ultimo && ro === rondas) && (r > 0 || ultimo)) add(null, ultimo ? entreRondas : r, ultimo ? 'Descanso entre rondas' : 'Descanso', { ronda: ro, rondas });
         });
       }
       add('est_cuadriceps', 40, 'Enfriamiento'); add('est_isquios', 40, 'Enfriamiento');
     }
     const seg = pasos.reduce((s, p) => s + p.seg, 0);
-    const kcal = Math.round(pasos.reduce((s, p) => s + (p.ej ? EJ[p.ej].met : 2) * cfg.peso * p.seg / 3600, 0));
-    const ejercicios = [...new Set(pasos.filter(p => p.ej && p.fase !== 'Calentamiento' && p.fase !== 'Enfriamiento').map(p => p.ej))];
-    return { tipo, nombre: (window.NOMBRE_SESION || {})[tipo] || tipo, pasos, minutos: Math.round(seg / 60), kcal, ejercicios, cfg };
+    const kcal = Math.round(pasos.reduce((s, p) => s + (p.met || (p.ej ? EJ[p.ej].met : 2)) * cfg.peso * p.seg / 3600, 0));
+    const ejercicios = [...new Set(pasos.filter(p => p.ej && p.fase !== 'Enfriamiento' && (p.fase !== 'Calentamiento' || p.maquina)).map(p => p.ej))];
+    const bloques = {};
+    pasos.forEach(p => { if (p.maquina) bloques[p.maquina] = (bloques[p.maquina] || 0) + p.seg; });
+    const nombre = opts.nombre || (tipo === 'maquina' && usadas ? 'Cardio en ' + usadas.map(m => MAQUINAS[m].nombre.toLowerCase()).join(' + ') : (window.NOMBRE_SESION || {})[tipo] || tipo);
+    return { tipo, nombre, pasos, minutos: Math.round(seg / 60), kcal, ejercicios, cfg, bloques };
   }
 
   window.FF_EJ = EJ;
-  window.FFAnim = { montar, svgAnim, vista, poseEn, construir, dibujar, armarSesion, EJ };
+  window.FFAnim = { montar, svgAnim, vista, poseEn, construir, dibujar, armarSesion, EJ, MAQUINAS, PLANTILLAS, equiposDe };
 })();
 
 /* =========================================================
@@ -786,8 +1050,42 @@ function tipoSesion(q, diaSemana) {
   }
 
   /** Plan de 7 días. cfg = { kcal, comidas, pref, semilla, cambios } */
+  // ---------- Tiempos de comida y ayuno intermitente ----------
+  const PESOS = { desayuno: 0.25, colacion1: 0.1, comida: 0.38, colacion2: 0.1, cena: 0.22 };
+  const NOMBRES_T = { desayuno: 'Desayuno', colacion1: 'Colación de la mañana', comida: 'Comida', colacion2: 'Colación de la tarde', cena: 'Cena' };
+  const HORAS_T = { desayuno: 8, colacion1: 11, comida: 14.5, colacion2: 17.5, cena: 20 };
+  const AYUNOS = { '14:10': 10, '16:8': 8, '18:6': 6, '20:4': 4, 'omad': 1 };
+  const hh = h => { const H = Math.floor(h) % 24, m = Math.round((h - Math.floor(h)) * 60); return (H < 10 ? '0' : '') + H + ':' + (m < 10 ? '0' : '') + m; };
+  /** cc = { ayuno: null|'14:10'|'16:8'|'18:6'|'20:4'|'omad', inicio: 12, tiempos: ['desayuno','colacion1','comida','colacion2','cena'] } */
+  function tiemposDe(cc, comidas) {
+    cc = cc || {};
+    if (cc.ayuno && AYUNOS[cc.ayuno]) {
+      const W = AYUNOS[cc.ayuno], ini = +cc.inicio || 12, fin = ini + W;
+      const pool1 = ini < 11 ? 'desayuno' : 'comida';
+      if (cc.ayuno === 'omad') return [{ slot: 'comida', nombre: 'Tu comida del día', frac: 1, hora: hh(ini) }];
+      if (W >= 10) return [{ slot: pool1, nombre: 'Primera comida', frac: 0.3, hora: hh(ini) }, { slot: 'colacion', nombre: 'Colación', frac: 0.1, hora: hh(ini + 3) },
+        { slot: 'comida', nombre: 'Comida', frac: 0.35, hora: hh(ini + 5.5) }, { slot: 'cena', nombre: 'Última comida', frac: 0.25, hora: hh(fin - 0.75) }];
+      if (W >= 8) return [{ slot: pool1, nombre: 'Primera comida', frac: 0.4, hora: hh(ini) }, { slot: 'colacion', nombre: 'Colación', frac: 0.15, hora: hh(ini + 3.5) },
+        { slot: 'comida', nombre: 'Última comida', frac: 0.45, hora: hh(fin - 1) }];
+      if (W >= 6) return [{ slot: pool1, nombre: 'Primera comida', frac: 0.45, hora: hh(ini) }, { slot: 'colacion', nombre: 'Colación', frac: 0.1, hora: hh(ini + 2.5) },
+        { slot: 'comida', nombre: 'Última comida', frac: 0.45, hora: hh(fin - 0.75) }];
+      return [{ slot: 'comida', nombre: 'Primera comida', frac: 0.5, hora: hh(ini) }, { slot: 'comida', nombre: 'Última comida', frac: 0.5, hora: hh(fin - 0.5) }];
+    }
+    let sel = (cc.tiempos && cc.tiempos.length) ? cc.tiempos.filter(t => PESOS[t]) : null;
+    if (!sel) sel = { 3: ['desayuno', 'comida', 'cena'], 4: ['desayuno', 'colacion1', 'comida', 'cena'], 5: ['desayuno', 'colacion1', 'comida', 'colacion2', 'cena'] }[comidas] || ['desayuno', 'colacion1', 'comida', 'cena'];
+    const orden = ['desayuno', 'colacion1', 'comida', 'colacion2', 'cena'];
+    sel = orden.filter(t => sel.includes(t));
+    const tot = sel.reduce((a, t) => a + PESOS[t], 0);
+    return sel.map(t => ({ slot: t.indexOf('colacion') === 0 ? 'colacion' : t, nombre: NOMBRES_T[t], frac: PESOS[t] / tot, hora: hh(HORAS_T[t]) }));
+  }
+  function ventanaAyuno(cc) {
+    if (!cc || !cc.ayuno || !AYUNOS[cc.ayuno]) return null;
+    const ini = +cc.inicio || 12, W = cc.ayuno === 'omad' ? 2 : AYUNOS[cc.ayuno];
+    return { ini, fin: ini + W, horas: W, ayunoHoras: 24 - W, texto: hh(ini) + '–' + hh(ini + W) };
+  }
+
   function planSemana(cfg) {
-    const dist = DISTRIB[cfg.comidas] || DISTRIB[4];
+    const dist = cfg.tiempos || tiemposDe(cfg.comidasCfg, cfg.comidas);
     const rand = rng(cfg.semilla || 'ff');
     const orden = {};
     ['desayuno', 'colacion', 'comida', 'cena'].forEach(s => {
@@ -808,20 +1106,37 @@ function tipoSesion(q, diaSemana) {
     const dias = [];
     let col = 0;
     for (let d = 0; d < 7; d++) {
-      const tiempos = dist.map(([slot, nombre, frac], i) => {
+      const tiempos = [];
+      const usadosDia = [];
+      dist.forEach((tm, i) => {
+        const { slot, nombre, frac, hora } = tm;
         const lista = orden[slot];
-        const idx = slot === 'colacion' ? (col++) : d;
+        let idx = slot === 'colacion' ? (col++) : d + i * 3;
         const clave = d + '_' + i;
         const cambio = cfg.cambios && cfg.cambios[clave];
-        const pl = (cambio && PL.find(x => x.id === cambio)) || lista[idx % lista.length];
+        let pl = (cambio && PL.find(x => x.id === cambio)) || lista[idx % lista.length];
+        for (let k = 0; !cambio && usadosDia.includes(pl.id) && k < lista.length; k++) pl = lista[(++idx) % lista.length];
+        usadosDia.push(pl.id);
         const obj = cfg.kcal ? cfg.kcal * frac : 0;
-        return Object.assign({ slot, nombre, clave, frac, objetivo: Math.round(obj), fijo: !!cambio }, porcion(pl, obj));
+        const t = Object.assign({ slot, nombre, clave, frac, hora, objetivo: Math.round(obj), fijo: !!cambio }, porcion(pl, obj));
+        tiempos.push(t);
+        // Comidas grandes (ayuno, pocas comidas): agrega un complemento para completar las calorías
+        let resta = obj - t.k;
+        for (let nc = 0; cfg.kcal && resta > 180 && nc < 3; nc++) {
+          const cc = orden.colacion.filter(x => !usadosDia.includes(x.id)).sort((a, b) => b.p / b.k - a.p / a.k);
+          const comp = cc[(d + i) % Math.max(1, Math.min(3, cc.length))] || orden.colacion[0];
+          usadosDia.push(comp.id);
+          const ck = clave + 'c' + (nc || '');
+          const tc = Object.assign({ slot: 'colacion', nombre: nombre + ' · complemento', clave: ck, frac: resta / cfg.kcal, hora, objetivo: Math.round(resta), complemento: true, fijo: !!(cfg.cambios && cfg.cambios[ck]) },
+            porcion((cfg.cambios && cfg.cambios[ck] && PL.find(x => x.id === cfg.cambios[ck])) || comp, resta));
+          tiempos.push(tc); resta -= tc.k;
+        }
       });
       // Si falta proteína, cambia las colaciones por opciones más proteicas
       if (cfg.proteina) {
         const prot = () => tiempos.reduce((s, t) => s + t.p, 0);
         tiempos.forEach((t, i) => {
-          if (t.slot !== 'colacion' || t.fijo || prot() >= cfg.proteina * 0.85) return;
+          if (t.slot !== 'colacion' || t.fijo || t.complemento || prot() >= cfg.proteina * 0.85) return;
           const mejor = orden.colacion.filter(x => !tiempos.some(y => y.id === x.id)).sort((a, b) => b.p / b.k - a.p / a.k)[0];
           if (mejor && mejor.p > t.pl.p) tiempos[i] = Object.assign({}, t, porcion(mejor, t.objetivo));
         });
@@ -863,5 +1178,5 @@ function tipoSesion(q, diaSemana) {
     return grupos;
   }
 
-  window.FFComida = { PL, DISTRIB, planSemana, alternativas, porcion, ingredientes, listaSuper, apto };
+  window.FFComida = { PL, DISTRIB, planSemana, alternativas, porcion, ingredientes, listaSuper, apto, tiemposDe, ventanaAyuno, AYUNOS, NOMBRES_T };
 })();
