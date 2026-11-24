@@ -127,6 +127,10 @@ textarea{resize:none;min-height:96px;line-height:1.4}
 .hoja>div{background:var(--bg);width:100%;max-width:520px;margin:0 auto;border-radius:32px 32px 0 0;padding:10px 20px calc(24px + var(--safe-b));max-height:90vh;overflow:auto}
 .hoja>div:before{content:'';display:block;width:42px;height:5px;border-radius:9px;background:var(--linea);margin:0 auto 16px}
 .hoja h3{font-size:21px}
+.fecha-nav{display:flex;gap:8px;align-items:center}
+.fecha-nav button{width:44px;height:44px;border-radius:14px;border:0;display:grid;place-items:center;flex:none}
+.fecha-nav label{flex:1;margin:0;height:44px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;position:relative;text-transform:capitalize}
+.fecha-nav input[type=date]{position:absolute;inset:0;opacity:0;width:100%;height:100%;padding:0;border:0;-webkit-appearance:none}
 .hoja-top{position:sticky;top:0;height:0;display:flex;justify-content:flex-end;z-index:6}
 .hoja-x{width:42px;height:42px;border-radius:50%;border:0;background:var(--card);color:var(--tx);box-shadow:0 4px 14px rgba(20,20,50,.18);display:grid;place-items:center;margin-top:-6px;flex:none}
 .hoja-x svg{width:20px;height:20px}
@@ -183,6 +187,7 @@ textarea{resize:none;min-height:96px;line-height:1.4}
 @media (min-width:560px){.wiz>*{margin-left:auto !important;margin-right:auto !important}}
 .wiz-top{display:flex;align-items:center;gap:12px;padding:0 18px 6px}
 .wiz h2{font-size:28px;font-weight:800;margin:14px 18px 6px;letter-spacing:-.6px;line-height:1.15}
+.wiz .sec h2{font-size:20px;margin:0;letter-spacing:-.3px}
 .wiz .sub{margin:0 18px 20px;color:var(--tx2);font-weight:500;line-height:1.45}
 .wiz .card{margin-left:18px;margin-right:18px}
 .wiz-pie{position:fixed;left:0;right:0;bottom:0;padding:14px 18px calc(14px + var(--safe-b));background:linear-gradient(to top,var(--bg) 72%,transparent);z-index:46;max-width:none !important}
@@ -239,7 +244,7 @@ details summary::-webkit-details-marker{display:none}
 /* =========================================================
    CONFIGURA AQUÍ la URL de tu App web de Apps Script
    ========================================================= */
-const API_URL = 'https://script.google.com/macros/s/AKfycbwNvtv4EjwW_NPbKP-vZtMKrr3tvL6cmXEV_uNob53Cyq-J1sqnayA8IcT4RPM-YZkk/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycbxo_alqY2R8mje4fkyhyiW7rKBKek0WjmpOksqCm0R_1Di958k4Rfgd_NzuF5WXPihv/exec';
 
 // ---------------- Íconos ----------------
 const P = {
@@ -310,10 +315,48 @@ function hoja(html) {
 }
 function cerrarHoja() { const h = $('#hoja'); if (h) h.remove(); }
 
+const CON_FECHA = ['agua', 'comidaGuardar', 'ejercicio', 'cuerpo', 'eliminar', 'panel'];
+const hoyLocal = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+const fechaSel = () => S.fecha || hoyLocal();
+function sumarDiasF(f, n) { const d = new Date(f + 'T12:00:00'); d.setDate(d.getDate() + n); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+function fechaLarga(f) {
+  if (f === hoyLocal()) return 'Hoy';
+  if (f === sumarDiasF(hoyLocal(), -1)) return 'Ayer';
+  return DIAS[new Date(f + 'T12:00:00').getDay()] + ' ' + fechaBonita(f);
+}
+async function cambiarFecha(f) {
+  const hoy = hoyLocal(), min = sumarDiasF(hoy, -31);
+  if (!f || f > hoy) f = hoy;
+  if (f < min) { toast('Solo puedes registrar hasta 31 días atrás'); f = min; }
+  S.fecha = f === hoy ? null : f;
+  try { await refrescarPanel(); } catch (e) { toast(e.message); }
+  const enHoja = !!document.querySelector('#hoja .fecha-nav');
+  const y = window.scrollY; ir(S.tab === 'evaluacion' ? 'hoy' : S.tab); window.scrollTo(0, y);
+  if (enHoja) accionesRapidas();
+}
+/** Barra para cambiar el día que se está registrando. claro = sobre fondo morado */
+function fechaNav(claro) {
+  const f = fechaSel(), hoy = f === hoyLocal();
+  const col = claro ? 'background:rgba(255,255,255,.16);color:#fff' : 'background:var(--card);color:var(--tx);box-shadow:var(--sombra)';
+  return `<div class="fecha-nav" style="${claro ? 'margin-top:16px' : 'margin:0 18px 14px'}">
+    <button style="${col}" onclick="cambiarFecha(sumarDiasF(fechaSel(),-1))" aria-label="Día anterior">${ic('atras')}</button>
+    <label style="${col}">📅 ${fechaLarga(f)}${hoy ? '' : ' <span style="opacity:.75;font-weight:600">· cambiar</span>'}<input type="date" value="${f}" max="${hoyLocal()}" min="${sumarDiasF(hoyLocal(), -31)}" onchange="cambiarFecha(this.value)"></label>
+    <button style="${col};${hoy ? 'opacity:.35' : ''}" ${hoy ? 'disabled' : ''} onclick="cambiarFecha(sumarDiasF(fechaSel(),1))" aria-label="Día siguiente">${ic('atras', null, 'transform:rotate(180deg)')}</button></div>`;
+}
+function bannerFecha() {
+  if (!S.fecha) return '';
+  return `<div class="aviso" style="display:flex;gap:12px;align-items:center;background:var(--mant);color:var(--mant-t)"><span style="flex:1">📅 Estás registrando en <b>${fechaLarga(S.fecha).toLowerCase()}</b>. Todo lo que agregues se guarda en ese día.</span>
+    <button class="btn chico" style="flex:none;background:var(--mant-t);color:#fff" onclick="cambiarFecha(null)">Volver a hoy</button></div>`;
+}
+/** Aplica la respuesta: si se registró en otro día distinto al que se ve, recarga. */
+async function usarPanel(r, fecha) { if (!fecha || fecha === fechaSel()) S.panel = r.panel; else await refrescarPanel(); S.semana = null; }
+
 async function api(accion, datos, opts) {
   opts = opts || {};
   if (!S.url) throw new Error('Falta configurar la URL del sistema');
-  const body = Object.assign({ accion, datos: datos || {} }, opts.publico ? { clave: S.clave } : { perfilId: S.sesion && S.sesion.perfilId, pin: S.sesion && S.sesion.pin });
+  datos = datos || {};
+  if (S.fecha && CON_FECHA.includes(accion) && datos.fecha === undefined) datos.fecha = S.fecha;
+  const body = Object.assign({ accion, datos }, opts.publico ? { clave: S.clave } : { perfilId: S.sesion && S.sesion.perfilId, pin: S.sesion && S.sesion.pin });
   if (opts.carga) cargando(true, opts.carga);
   try {
     const r = await fetch(S.url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body) });
@@ -426,12 +469,12 @@ function ir(t) {
   ({ hoy: vHoy, entrena: vEntrena, comida: vComida, cuerpo: vCuerpo, cocina: () => { S.comidaSeg = 'cocina'; vComida(); }, coach: vCoach, evaluacion: vEvaluacion })[t]();
   FFAnim.montar(app);
 }
-async function refrescarPanel() { const r = await api('panel'); S.panel = r.panel; S.perfil = r.perfil; }
+async function refrescarPanel() { const r = await api('panel', S.fecha ? { fecha: S.fecha } : {}); S.panel = r.panel; S.perfil = r.perfil; }
 
 // ---------------- Acciones rápidas (+) ----------------
 function accionesRapidas() {
   const menor = esMenor();
-  const h = hoja(`<h3>¿Qué quieres registrar?</h3><p class="mut" style="margin:0">También puedes mandarlo por Telegram con texto, foto o voz.</p>
+  const h = hoja(`<h3>¿Qué quieres registrar?</h3><div style="margin:10px 0 4px">${fechaNav(false).replace('margin:0 18px 14px', 'margin:0')}</div><p class="mut" style="margin:6px 0 0">${S.fecha ? 'Se guardará en ' + fechaLarga(S.fecha).toLowerCase() + '.' : '¿Se te pasó registrar algo? Cambia el día con las flechas.'}</p>
     <div class="acciones">
       <button class="acc" style="background:var(--cielo);color:var(--cielo-t)" data-a="agua"><div class="ico-c">${ic('gota')}</div>Agua</button>
       <button class="acc" style="background:var(--menta);color:var(--menta-t)" data-a="comida"><div class="ico-c">${ic('comida')}</div>Comida</button>
@@ -469,14 +512,16 @@ function vHoy() {
       <button class="circ" onclick="ir('coach')" aria-label="Coach">${ic('chat')}</button>
       <button style="border:0;background:none;padding:0" onclick="ajustes()" aria-label="Ajustes">${avatar()}</button></div>
     <div class="racha"><div><div style="font-weight:600;opacity:.9">🔥 Racha</div><div class="n">${d.racha}</div><div style="opacity:.85;font-weight:500">${d.racha === 1 ? 'día' : 'días'}</div></div><div class="sep"></div>
-      <div style="font-weight:500;line-height:1.5;opacity:.95">${frase}</div><div class="fuego">🔥</div></div></div>`;
+      <div style="font-weight:500;line-height:1.5;opacity:.95">${frase}</div><div class="fuego">🔥</div></div>${fechaNav(true)}</div>`;
+  h += bannerFecha();
 
   if (!S.perfil.telegram && S.bot) h += `<div class="card cielo p" style="display:flex;gap:14px;align-items:center"><div class="ico-c" style="background:var(--card);color:var(--cielo-t)">${ic('campana')}</div>
     <div style="flex:1"><b>Activa tus alertas de agua</b><div class="mut peq">Te aviso por Telegram solo cuando vayas atrasado.</div></div>
     <a class="btn chico" style="background:var(--cielo-t);color:#fff;text-decoration:none" href="https://t.me/${esc(S.bot)}?start=${S.sesion.perfilId}_${S.sesion.pin}">Conectar</a></div>`;
 
+  h += tarjetaAyuno();
   h += `<div id="hoy_tarjetas">${tarjetasHoy()}</div>`;
-  h += `<div class="sec"><h2>Resumen de hoy</h2><span class="mut">${DIAS[new Date(d.fecha + 'T12:00:00').getDay()]} ${fechaBonita(d.fecha)}</span></div>`;
+  h += `<div class="sec"><h2>${S.fecha ? 'Resumen del día' : 'Resumen de hoy'}</h2><span class="mut">${DIAS[new Date(d.fecha + 'T12:00:00').getDay()]} ${fechaBonita(d.fecha)}</span></div>`;
   const filas = [];
   if (!menor) filas.push(['Proteína', ic('huevo'), 'var(--lila)', 'var(--lila-t)', d.consumido.proteina, m.proteina, ' g', 'var(--mor)']);
   filas.push(['Agua', ic('gota'), 'var(--cielo)', 'var(--cielo-t)', +L(d.agua.ml), +L(m.agua), ' L', 'var(--agua)']);
@@ -535,7 +580,7 @@ function verAgua() {
   hoja(`<h3>Agua de hoy</h3><div class="card" style="margin:12px 0 0"><ul class="lista">${d.agua.registros.map(a => `<li><div class="ico-c" style="background:var(--cielo);color:var(--cielo-t)">${ic('gota')}</div><div class="tx"><b>${a.ml} ml</b><span class="mut peq">${a.hora}</span></div><button class="x" onclick="eliminar('Agua','${a.id}')">${ic('x')}</button></li>`).join('')}</ul></div>`);
 }
 async function agua(ml) {
-  try { const r = await api('agua', { ml }); S.panel = r.panel; if (S.semana) { S.semana[6].agua = r.panel.agua.ml; S.semana[6].score = r.panel.score; } toast('+' + ml + ' ml 💧'); if (S.tab === 'hoy') vHoy(); }
+  try { const r = await api('agua', { ml }); S.panel = r.panel; if (S.semana && !S.fecha) { S.semana[6].agua = r.panel.agua.ml; S.semana[6].score = r.panel.score; } toast('+' + ml + ' ml 💧' + (S.fecha ? ' · ' + fechaLarga(S.fecha).toLowerCase() : '')); if (S.tab === 'hoy') vHoy(); }
   catch (e) { toast(e.message); }
 }
 async function eliminar(hojaN, id) {
@@ -546,7 +591,7 @@ async function eliminar(hojaN, id) {
 const ACTIVIDADES = ['caminar', 'caminata rápida', 'correr', 'bicicleta', 'pesas', 'gimnasio', 'hiit', 'natación', 'fútbol', 'baile', 'zumba', 'yoga', 'box', 'basquetbol', 'spinning', 'escaleras', 'trabajo de casa', 'otro'];
 function formEjercicio() {
   let act = 'caminata rápida', int = 'media';
-  const h = hoja(`<h3>Agregar ejercicio</h3>
+  const h = hoja(`<h3>Agregar ejercicio</h3>${S.fecha ? `<p class="mut" style="margin:0">Para ${fechaLarga(S.fecha).toLowerCase()}</p>` : ''}
     <label>Actividad</label><div class="chips" id="e_act">${ACTIVIDADES.map(a => `<button class="chip ${a === act ? 'on' : ''}" data-v="${a}" style="text-transform:capitalize">${a}</button>`).join('')}</div>
     <label>Minutos</label><div class="chips" id="e_mins">${[15, 20, 30, 45, 60, 90].map(n => `<button class="chip ${n === 30 ? 'on' : ''}" data-v="${n}">${n}</button>`).join('')}</div>
     <input id="e_min" type="number" inputmode="numeric" value="30" style="margin-top:10px">
@@ -557,7 +602,7 @@ function formEjercicio() {
   grupo('#e_act', v => act = v); grupo('#e_int', v => int = v); grupo('#e_mins', v => $('#e_min').value = v);
   $('#e_ok').onclick = async () => {
     try { const r = await api('ejercicio', { actividad: act, minutos: $('#e_min').value, intensidad: int, kcal: $('#e_kcal').value }, { carga: 'Guardando…' });
-      S.panel = r.panel; S.semana = null; cerrarHoja(); toast('¡Bien hecho! 💪'); ir('hoy'); } catch (e) { toast(e.message); }
+      S.panel = r.panel; S.semana = null; cerrarHoja(); toast('¡Bien hecho! 💪' + (S.fecha ? ' · ' + fechaLarga(S.fecha).toLowerCase() : '')); ir('hoy'); } catch (e) { toast(e.message); }
   };
 }
 
@@ -568,7 +613,7 @@ function tipoAuto() { const h = new Date().getHours(); return h < 11 ? 'desayuno
 function vRegistro() {
   const d = S.panel, menor = esMenor();
   S.tipoComida = S.tipoComida || tipoAuto();
-  let h = encabezadoComida(menor ? 'Registra lo que comes' : `Te quedan <b style="color:var(--verde)">${d.restante.toLocaleString('es-MX')} kcal</b> hoy`);
+  let h = encabezadoComida(menor ? 'Registra lo que comes' : `${S.fecha ? 'Ese día quedaron' : 'Te quedan'} <b style="color:var(--verde)">${d.restante.toLocaleString('es-MX')} kcal</b>`) + fechaNav(false) + bannerFecha();
   h += `<div class="card menta p"><h3 style="color:var(--menta-t)">¿Qué comiste?</h3><p class="peq" style="margin:0 0 12px;color:var(--menta-t);opacity:.85;font-weight:600">Escríbelo normal o tómale foto. La IA calcula el resto.</p>
     <div class="chips" id="tipos">${TIPOS.map(t => `<button class="chip ${t[0] === S.tipoComida ? 'on' : ''}" data-t="${t[0]}">${t[1]} ${t[0][0].toUpperCase() + t[0].slice(1)}</button>`).join('')}</div>
     <textarea id="c_txt" style="margin-top:12px" placeholder="Ej. 2 tacos de cochinita, frijoles y un agua de horchata"></textarea>
@@ -579,7 +624,7 @@ function vRegistro() {
     <div class="kpi" style="background:var(--lila);color:var(--lila-t)"><small>Proteína</small><b style="font-size:22px">${d.consumido.proteina} g</b><span>de ${d.metas.proteina} g</span></div>
     <div class="kpi" style="background:var(--mant);color:var(--mant-t)"><small>Carbs/grasa</small><b style="font-size:22px">${d.consumido.carbs}/${d.consumido.grasa}</b><span>gramos</span></div></div>`;
   h += `<div class="sec"><h2>Tus frecuentes</h2></div><div id="favs" style="margin:0 18px"><p class="mut peq">Cargando…</p></div>`;
-  h += `<div class="sec"><h2>Comidas de hoy</h2><span class="mut">${d.comidas.length}</span></div>
+  h += `<div class="sec"><h2>${S.fecha ? 'Comidas de ese día' : 'Comidas de hoy'}</h2><span class="mut">${d.comidas.length}</span></div>
     <div class="card">${d.comidas.length ? `<ul class="lista">${d.comidas.map(c => { const em = (TIPOS.find(t => t[0] === c.tipo) || ['', '🍽️'])[1];
       return `<li><div class="ico-c" style="background:${COLOR_TIPO[c.tipo] || 'var(--menta)'};font-size:20px">${em}</div><div class="tx"><b>${esc(c.descripcion)}</b><span class="mut peq" style="text-transform:capitalize">${esc(c.tipo)} · ${c.hora}${menor ? '' : ` · ${c.kcal} kcal · ${c.proteina} g prot.`}</span></div><button class="x" onclick="eliminar('Comidas','${c.id}')">${ic('x')}</button></li>`; }).join('')}</ul>`
       : '<p class="mut" style="margin:0">Nada registrado todavía. ¡Empieza con tu desayuno!</p>'}</div>`;
@@ -617,7 +662,7 @@ async function guardarComida(c) {
   try {
     const r = await api('comidaGuardar', Object.assign({ tipo: S.tipoComida || tipoAuto() }, c), { carga: 'Guardando…' });
     S.panel = r.panel; S.estimacion = null; S.multiplicador = 1; S.semana = null;
-    toast(esMenor() ? '¡Registrado! 🙌' : `Registrado. Te quedan ${r.panel.restante} kcal`); ir('comida');
+    toast(esMenor() ? '¡Registrado! 🙌' : S.fecha ? `Registrado en ${fechaLarga(S.fecha).toLowerCase()}` : `Registrado. Te quedan ${r.panel.restante} kcal`); ir('comida');
   } catch (e) { toast(e.message); }
 }
 async function cargarFavoritas() {
@@ -657,6 +702,7 @@ function pintarCuerpo() {
   h += `<div class="sec"><h2>Tendencia</h2><span class="mut">peso (kg)</span></div><div class="card">${grafica(pr.puntos, pr.pesoMeta)}</div>`;
   h += `<div class="sec"><h2>Registrar medición</h2></div><div class="card">
     <button class="btn suave" id="g_foto">${ic('camara', 20)} Leer captura de Garmin / Salud</button>
+    <label>Fecha de la medición</label><input id="m_fecha" type="date" value="${fechaSel()}" max="${hoyLocal()}" min="${sumarDiasF(hoyLocal(), -31)}">
     <div class="grid2"><div><label>Peso (kg)</label><input id="m_peso" type="number" inputmode="decimal" step="0.1"></div><div><label>Grasa (%)</label><input id="m_grasa" type="number" inputmode="decimal" step="0.1"></div></div>
     <div class="grid2"><div><label>Músculo (kg)</label><input id="m_mus" type="number" inputmode="decimal" step="0.1"></div><div><label>Cintura (cm)</label><input id="m_cin" type="number" inputmode="decimal" step="0.5"></div></div>
     <p class="mut peq">Pésate el mismo día, en ayunas y después del baño. Lo que cuenta es la tendencia semanal.</p>
@@ -673,7 +719,7 @@ function pintarCuerpo() {
       toast(x.peso_kg ? 'Revisa los datos y guarda' : 'No encontré datos en la imagen'); } catch (e) { toast(e.message); }
   };
   $('#m_ok').onclick = async () => {
-    try { const r = await api('cuerpo', { peso: $('#m_peso').value, grasa_pct: $('#m_grasa').value, musculo_kg: $('#m_mus').value, cintura_cm: $('#m_cin').value }, { carga: 'Guardando…' });
+    try { const r = await api('cuerpo', { peso: $('#m_peso').value, grasa_pct: $('#m_grasa').value, musculo_kg: $('#m_mus').value, cintura_cm: $('#m_cin').value, fecha: $('#m_fecha').value || hoyLocal() }, { carga: 'Guardando…' });
       S.progreso = r.progreso; toast('Medición guardada ✅'); refrescarPanel().catch(() => {}); pintarCuerpo(); } catch (e) { toast(e.message); }
   };
 }
@@ -811,8 +857,8 @@ function hechosSemana() {
   (S.semana || []).forEach(x => { const dd = Math.round((Date.parse(x.fecha) - Date.parse(lun)) / 864e5); if (dd >= 0 && dd < 7) out[dd] = !!x.rutina; });
   return out;
 }
-const COLOR_SES = { fuerzaA: 'var(--mor)', fuerzaB: 'var(--lila-t)', cardio: 'var(--naranja)', core: 'var(--verde)', activo: 'var(--agua)', descanso: 'var(--tx2)' };
-const EMOJI_SES = { fuerzaA: '🏋️', fuerzaB: '💪', cardio: '🔥', core: '🧘', activo: '🚶', descanso: '😌' };
+const COLOR_SES = { fuerzaA: 'var(--mor)', fuerzaB: 'var(--lila-t)', cardio: 'var(--naranja)', core: 'var(--verde)', activo: 'var(--agua)', descanso: 'var(--tx2)', maquina: 'var(--agua)', pierna: 'var(--mor)', superior: 'var(--lila-t)', libre: 'var(--naranja)' };
+const EMOJI_SES = { fuerzaA: '🏋️', fuerzaB: '💪', cardio: '🔥', core: '🧘', activo: '🚶', descanso: '😌', maquina: '🚴', pierna: '🍑', superior: '🦾', libre: '⭐' };
 
 // ---------------- CUESTIONARIO ----------------
 const W = {};
@@ -822,9 +868,11 @@ function abrirCuestionario(nuevo) {
   W.d = Object.assign({
     nombre: '', pin: '', color: COLORES[0], sexo: p.sexo || 'H', edad: p.edad || 30, estatura: p.estatura_cm || 168,
     peso: (!nuevo && S.panel && S.panel.peso) || p.peso_inicial || 75, pesoMeta: p.peso_meta || '', cintura: '', cuello: '', cadera: '', grasa: '',
-    objetivo: 'bajar_grasa', ritmo: 0.75, actividad: 'ligero', nivel: 'principiante', dias: 4, minutos: 30, equipo: 'ninguno',
-    lesiones: [], condiciones: [], embarazo: false, bajoImpacto: false, comidas: 4, dieta: {}
+    objetivo: 'bajar_grasa', ritmo: 0.75, actividad: 'ligero', nivel: 'principiante', dias: 4, minutos: 30, equipo: 'ninguno', equipos: [], cardioModo: 'combinar',
+    lesiones: [], condiciones: [], embarazo: false, bajoImpacto: false, comidas: 4, dieta: {}, comidasCfg: {}
   }, q);
+  if (!q.equipos) W.d.equipos = FFAnim.equiposDe(q);
+  W.d.comidasCfg = Object.assign({}, W.d.comidasCfg || {});
   if (!nuevo && S.panel && S.panel.peso) W.d.peso = S.panel.peso;
   W.d.menor = W.d.edad < 18;
   pintarPaso();
@@ -873,7 +921,8 @@ const PASOS_Q = [
     html: d => `<div class="sec" style="margin-top:0"><h2>Tu nivel</h2></div><div class="ops">${op('nivel', 'principiante', 'Principiante', 'No hago ejercicio o empiezo de nuevo', '🌱', d.nivel === 'principiante')}${op('nivel', 'intermedio', 'Intermedio', 'Entreno 1–3 veces por semana', '🔥', d.nivel === 'intermedio')}${op('nivel', 'avanzado', 'Avanzado', 'Entreno seguido desde hace meses', '🏆', d.nivel === 'avanzado')}</div>
       <div class="sec"><h2>Días por semana</h2></div><div class="chips" style="margin:0 18px">${[2, 3, 4, 5, 6].map(n => `<button class="chip ${+d.dias === n ? 'on' : ''}" onclick="W.d.dias=${n};pintarPaso(true)" style="min-width:52px">${n}</button>`).join('')}</div>
       <div class="sec"><h2>Minutos por sesión</h2></div><div class="chips" style="margin:0 18px">${[20, 30, 45, 60].map(n => `<button class="chip ${+d.minutos === n ? 'on' : ''}" onclick="W.d.minutos=${n};pintarPaso(true)" style="min-width:60px">${n} min</button>`).join('')}</div>
-      <div class="sec"><h2>¿Dónde entrenas?</h2></div><div class="ops">${op('equipo', 'ninguno', 'En casa, sin equipo', 'Solo con tu cuerpo y una silla', '🏠', d.equipo === 'ninguno')}${op('equipo', 'mancuernas', 'En casa con mancuernas', 'O botellas de agua llenas', '🏋️', d.equipo === 'mancuernas')}${op('equipo', 'gimnasio', 'En el gimnasio', 'Usa mancuernas del gym', '🏟️', d.equipo === 'gimnasio')}</div>` },
+      <div class="sec"><h2>¿Qué equipo tienes?</h2><span class="mut">elige varios</span></div><div class="ops dos">${[['ninguna', 'Solo mi cuerpo', '🏠']].concat(EQUIPOS).map(([v, t, e]) => op('equipos', v, t, '', e, v === 'ninguna' ? !(d.equipos || []).length : (d.equipos || []).includes(v), '', true)).join('')}</div>
+      ${(d.equipos || []).filter(x => FFAnim.MAQUINAS[x]).length > 1 ? `<div class="sec"><h2>Tu cardio en máquina</h2></div><div class="ops dos">${op('cardioModo', 'una', 'Una sola máquina', 'Tu favorita', '1️⃣', d.cardioModo === 'una')}${op('cardioModo', 'combinar', 'Combinar varias', 'Reparto el tiempo', '🔀', d.cardioModo !== 'una')}</div>` : ''}` },
   { id: 'salud', si: () => !esMenorW(), titulo: 'Tu salud', sub: 'Para cuidarte: quitamos los ejercicios que no te convienen.',
     html: d => `<div class="sec" style="margin-top:0"><h2>¿Molestias o lesiones?</h2></div><div class="ops dos">${[['rodilla', 'Rodilla', '🦵'], ['espalda', 'Espalda baja', '🧍'], ['hombro', 'Hombro', '💪'], ['ninguna', 'Ninguna', '✅']].map(([v, t, e]) => op('lesiones', v, t, '', e, (d.lesiones || []).includes(v) || (v === 'ninguna' && !(d.lesiones || []).length), '', true)).join('')}</div>
       <div class="sec"><h2>Condiciones de salud</h2></div><div class="ops dos">${[['hipertension', 'Presión alta', '🩺'], ['diabetes', 'Diabetes', '🩸'], ['corazon', 'Corazón', '❤️'], ['ninguna', 'Ninguna', '✅']].map(([v, t, e]) => op('condiciones', v, t, '', e, (d.condiciones || []).includes(v) || (v === 'ninguna' && !(d.condiciones || []).length), '', true)).join('')}</div>
@@ -881,7 +930,7 @@ const PASOS_Q = [
       <div class="card" style="margin-top:${d.sexo === 'M' ? 0 : 16}px"><div class="fila"><div><b>Prefiero bajo impacto</b><div class="mut peq">Sin saltos</div></div><label class="switch"><input type="checkbox" id="q_bi" ${d.bajoImpacto ? 'checked' : ''}><span></span></label></div></div>`,
     leer: d => { const e = $('#q_emb'); d.embarazo = !!(e && e.checked); d.bajoImpacto = $('#q_bi').checked; } },
   { id: 'comida', titulo: 'Tu alimentación', sub: 'Tu plan de comidas se arma con esto.',
-    html: d => `<div class="sec" style="margin-top:0"><h2>Comidas al día</h2></div><div class="ops">${op('comidas', 3, '3 comidas', 'Desayuno, comida y cena', '🍽️', +d.comidas === 3)}${op('comidas', 4, '4 comidas', '+ una colación', '🥗', +d.comidas === 4)}${op('comidas', 5, '5 comidas', '+ dos colaciones', '🍎', +d.comidas === 5)}</div>
+    html: d => `${htmlTiempos(d.comidasCfg, d.comidas, !esMenorW() && !d.embarazo, (d.condiciones || []).includes('diabetes'), 'W.d', 'pintarPaso(true)')}
       <div class="sec"><h2>¿Algo que no comes?</h2></div><div class="chips" style="margin:0 18px">${[['vegetariano', 'Vegetariano'], ['sinCerdo', 'Sin cerdo'], ['sinPescado', 'Sin pescado'], ['sinLacteos', 'Sin lácteos'], ['sinHuevo', 'Sin huevo']].map(([k, t]) => `<button class="chip ${d.dieta && d.dieta[k] ? 'on' : ''}" onclick="W.d.dieta=W.d.dieta||{};W.d.dieta['${k}']=!W.d.dieta['${k}'];pintarPaso(true)">${t}</button>`).join('')}</div>` }
 ];
 function op(grupo, valor, titulo, desc, emoji, sel, extra, multi) {
@@ -933,8 +982,12 @@ async function terminarCuestionario() {
   let k = 0; const iv = setInterval(() => { k = (k + 1) % frases.length; const f = $('#wz_f'); if (f) f.textContent = frases[k]; }, 600);
   const q = {
     sexo: d.sexo, edad: +d.edad, estatura: +d.estatura, peso: +d.peso, pesoMeta: d.pesoMeta || '', cintura: d.cintura || '', cuello: d.cuello || '', cadera: d.cadera || '', grasa: d.grasa || '',
-    objetivo: d.menor ? 'mantener' : d.objetivo, ritmo: +d.ritmo, actividad: d.actividad, nivel: d.nivel, dias: +d.dias, minutos: +d.minutos, equipo: d.equipo,
-    lesiones: d.lesiones || [], condiciones: d.condiciones || [], embarazo: !!d.embarazo, bajoImpacto: !!d.bajoImpacto, comidas: +d.comidas, dieta: d.dieta || {}, menor: !!d.menor,
+    objetivo: d.menor ? 'mantener' : d.objetivo, ritmo: +d.ritmo, actividad: d.actividad, nivel: d.nivel, dias: +d.dias, minutos: +d.minutos,
+    equipos: d.equipos || [], equipo: (d.equipos || []).includes('mancuernas') ? 'mancuernas' : 'ninguno', cardioModo: d.cardioModo || 'combinar',
+    maquinasCardio: (d.equipos || []).filter(x => FFAnim.MAQUINAS[x]), cardioEnMaquina: d.cardioEnMaquina !== false,
+    semanaPersonal: d.semanaPersonal || null, semanaOpts: d.semanaOpts || null,
+    lesiones: d.lesiones || [], condiciones: d.condiciones || [], embarazo: !!d.embarazo, bajoImpacto: !!d.bajoImpacto, dieta: d.dieta || {}, menor: !!d.menor,
+    comidasCfg: (d.menor || d.embarazo) ? Object.assign({}, d.comidasCfg, { ayuno: null }) : d.comidasCfg, comidas: FFComida.tiemposDe((d.menor || d.embarazo) ? Object.assign({}, d.comidasCfg, { ayuno: null }) : d.comidasCfg, +d.comidas || 4).length,
     fecha: new Date().toISOString().slice(0, 10)
   };
   try {
@@ -1020,10 +1073,17 @@ function tarjetaCuestionario() {
 
 // ---------------- ENTRENA ----------------
 S.diaEnt = null;
-function sesionDe(dia) { const q = qConPeso(); return FFAnim.armarSesion(tipoSesion(q, dia), q); }
+function sesionDe(dia) {
+  const q = qConPeso(), o = S.perfil ? LS.get(claveRut(fechaDeDia(dia)), null) : null;
+  if (o) return Object.assign(FFAnim.armarSesion(o.tipo, q, o.opts || {}), { personal: 'dia' });
+  const t = tipoSesion(q, dia), op = q.semanaPersonal && q.semanaPersonal[dia] && q.semanaOpts && q.semanaOpts[dia];
+  return Object.assign(FFAnim.armarSesion(t, q, op || {}), { personal: q.semanaPersonal && q.semanaPersonal[dia] ? 'semana' : '' });
+}
+const claveRut = f => 'ff_rut_' + S.perfil.id + '_' + f;
 function vEntrena() {
   const q = Q();
-  let h = encabezado('Entrena', q ? `Plan de ${q.dias} días · ${{ principiante: 'principiante', intermedio: 'intermedio', avanzado: 'avanzado' }[q.nivel] || ''}` : 'Rutinas con video para ti');
+  let h = encabezado('Entrena', q ? `Plan de ${q.dias} días · ${{ principiante: 'principiante', intermedio: 'intermedio', avanzado: 'avanzado' }[q.nivel] || ''}` : 'Rutinas con video para ti',
+    q ? `<button class="btn chico claro" style="flex:none;box-shadow:var(--sombra)" onclick="miEquipo()">🏋️ Mi equipo</button>` : '');
   if (!q) { app.innerHTML = h + tarjetaCuestionario() + bibliotecaHtml(); FFAnim.montar(app); activarBiblioteca(); return; }
   const dia = S.diaEnt === null ? hoyIdx() : S.diaEnt, ses = sesionDe(dia), esHoy = dia === hoyIdx();
   const hechos = hechosSemana();
@@ -1031,24 +1091,28 @@ function vEntrena() {
   const primero = ses.ejercicios[0] || 'caminar';
   h += `<div class="card" style="background:linear-gradient(150deg,var(--mor),#9a7bff);color:#fff;padding:0;overflow:hidden">
     <div style="background:rgba(255,255,255,.12)">${FFAnim.svgAnim(primero, 'anim-hero')}</div>
-    <div style="padding:18px 20px 20px"><span class="etq" style="background:rgba(255,255,255,.2);color:#fff">${esHoy ? 'HOY' : DIAS_L[dia].toUpperCase()}</span>
+    <div style="padding:18px 20px 20px"><div class="fila"><span class="etq" style="background:rgba(255,255,255,.2);color:#fff;flex:none">${esHoy ? 'HOY' : DIAS_L[dia].toUpperCase()}${ses.personal ? ' · PERSONALIZADA' : ''}</span>
+      <button class="btn chico" style="flex:none;margin-left:auto;background:rgba(255,255,255,.2);color:#fff" onclick="elegirRutina(${dia})">↻ Cambiar</button></div>
     <h3 style="font-size:23px;margin:10px 0 6px">${EMOJI_SES[ses.tipo]} ${esc(ses.nombre)}</h3>
-    <div class="fila" style="opacity:.92;font-weight:600;font-size:14px;gap:16px"><span style="flex:none">⏱️ ${ses.minutos} min</span><span style="flex:none">🔥 ~${ses.kcal} kcal</span><span style="flex:none">💪 ${ses.ejercicios.length || 1} ejercicios</span></div>
-    <button class="btn claro" style="margin-top:16px;color:var(--mor-t)" onclick="iniciarRutina(${dia})">▶ ${esHoy ? 'Empezar rutina' : 'Hacer esta rutina'}</button></div></div>`;
+    <div class="fila" style="opacity:.92;font-weight:600;font-size:14px;gap:16px"><span style="flex:none">⏱️ ${ses.minutos} min</span><span style="flex:none">🔥 ~${ses.kcal} kcal</span><span style="flex:none">${Object.keys(ses.bloques || {}).length ? '🏃 ' + Object.keys(ses.bloques).length + (Object.keys(ses.bloques).length > 1 ? ' máquinas' : ' máquina') : '💪 ' + (ses.ejercicios.length || 1) + ' ejercicios'}</span></div>
+    ${Object.keys(ses.bloques || {}).length ? `<div style="margin-top:12px;display:grid;gap:6px">${Object.entries(ses.bloques).map(([m, sg]) => `<div class="fila" style="background:rgba(255,255,255,.14);border-radius:14px;padding:8px 12px;font-weight:700;font-size:14px"><span>${FFAnim.MAQUINAS[m].emoji} ${FFAnim.MAQUINAS[m].nombre}</span><span style="text-align:right">${Math.round(sg / 60)} min</span></div>`).join('')}</div>` : ''}
+    ${hechos[dia] ? `<div class="btn" style="margin-top:16px;background:rgba(255,255,255,.2);color:#fff">✅ Rutina registrada ${esHoy ? 'hoy' : 'ese día'}</div>`
+      : `<button class="btn claro" style="margin-top:16px;color:var(--mor-t)" onclick="iniciarRutina(${dia})">▶ ${esHoy ? 'Empezar rutina' : dia < hoyIdx() ? 'Hacerla ahora' : 'Hacer esta rutina'}</button>
+        ${dia <= hoyIdx() ? `<button class="btn" style="margin-top:10px;background:rgba(255,255,255,.18);color:#fff" onclick="marcarHecha(${dia})">✓ Ya la hice${esHoy ? '' : ' ese día'}, solo registrarla</button>` : ''}`}</div></div>`;
   const circ = ses.pasos.filter(p => p.fase === 'Circuito'), rondas = circ.length ? circ[0].rondas : 0;
-  h += `<div class="sec"><h2>${ses.tipo === 'activo' || ses.tipo === 'descanso' ? 'Qué harás' : 'Circuito'}</h2><span class="mut">${rondas ? rondas + ' rondas · ' + circ[0].seg + ' s c/u' : ''}</span></div>
+  h += `<div class="sec"><h2>${ses.tipo === 'activo' || ses.tipo === 'descanso' || ses.tipo === 'maquina' ? 'Qué harás' : 'Circuito'}</h2><span class="mut">${rondas ? rondas + ' rondas · ' + circ[0].seg + ' s c/u' : ''}</span></div>
     <div class="card" style="padding:8px 16px"><ul class="lista">${(ses.ejercicios.length ? ses.ejercicios : ['caminar']).map(id => { const e = FF_EJ[id]; return `<li onclick="detalleEj('${id}')" style="cursor:pointer">
       <div style="width:74px;height:56px;border-radius:14px;overflow:hidden;background:var(--cielo);flex:none">${FFAnim.svgAnim(id, 'anim-mini')}</div>
-      <div class="tx"><b>${e.nombre}</b><span class="mut peq">${e.musculos} · ${e.reps}</span></div><span class="mut" style="flex:none">›</span></li>`; }).join('')}</ul></div>
+      <div class="tx"><b>${e.nombre}</b><span class="mut peq">${ses.bloques && ses.bloques[e.equipo] ? Math.round(ses.bloques[e.equipo] / 60) + ' min · ' + esc(FFAnim.MAQUINAS[e.equipo].mod[ses.cfg.nivel - 1]) : e.musculos + ' · ' + e.reps}</span></div><span class="mut" style="flex:none">›</span></li>`; }).join('')}</ul></div>
     <p class="mut peq" style="margin:-4px 22px 0">Incluye calentamiento y estiramientos. Si un ejercicio te cuesta, haz menos repeticiones pero con buena técnica.</p>`;
   h += bibliotecaHtml();
   app.innerHTML = h; FFAnim.montar(app); activarBiblioteca();
 }
 let filtroEj = 'Todos';
 function bibliotecaHtml() {
-  const grupos = ['Todos', 'Piernas', 'Brazos y pecho', 'Espalda', 'Core', 'Cardio', 'Estiramiento'];
-  const enGrupo = (e) => filtroEj === 'Todos' || (filtroEj === 'Piernas' && /Piernas|Glúteos/.test(e.grupo)) || (filtroEj === 'Brazos y pecho' && /Pecho|Brazos|Hombros/.test(e.grupo)) ||
-    (filtroEj === 'Espalda' && /Espalda/.test(e.grupo)) || (filtroEj === 'Core' && /Core/.test(e.grupo)) || (filtroEj === 'Cardio' && /Cardio/.test(e.grupo)) || (filtroEj === 'Estiramiento' && /Estiramiento|Movilidad/.test(e.grupo));
+  const grupos = ['Todos', 'Máquinas', 'Con pesas', 'Piernas', 'Brazos y pecho', 'Espalda', 'Core', 'Cardio', 'Estiramiento'];
+  const enGrupo = (e) => filtroEj === 'Todos' || (filtroEj === 'Máquinas' && /Máquina/.test(e.grupo)) || (filtroEj === 'Con pesas' && e.equipo === 'mancuernas') || (filtroEj === 'Piernas' && /Piernas|Glúteos/.test(e.grupo)) || (filtroEj === 'Brazos y pecho' && /Pecho|Brazos|Hombros/.test(e.grupo)) ||
+    (filtroEj === 'Espalda' && /Espalda/.test(e.grupo)) || (filtroEj === 'Core' && /Core/.test(e.grupo)) || (filtroEj === 'Cardio' && /Cardio/.test(e.grupo) && !/Máquina/.test(e.grupo)) || (filtroEj === 'Estiramiento' && /Estiramiento|Movilidad/.test(e.grupo));
   const ids = Object.keys(FF_EJ).filter(id => enGrupo(FF_EJ[id]));
   return `<div class="sec"><h2>Biblioteca de ejercicios</h2><span class="mut">${Object.keys(FF_EJ).length}</span></div>
     <div class="chips" id="bib_f" style="margin:0 18px 14px;flex-wrap:nowrap;overflow-x:auto;padding-bottom:4px">${grupos.map(g => `<button class="chip ${g === filtroEj ? 'on' : ''}" data-g="${g}" style="flex:none">${g}</button>`).join('')}</div>
@@ -1074,9 +1138,27 @@ let audioCtx = null;
 function beep(f, dur) { try { audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)(); const o = audioCtx.createOscillator(), g = audioCtx.createGain(); o.frequency.value = f; o.connect(g); g.connect(audioCtx.destination); g.gain.setValueAtTime(0.18, audioCtx.currentTime); g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + (dur || 0.15)); o.start(); o.stop(audioCtx.currentTime + (dur || 0.15)); } catch (e) {} }
 function hablar(t) { if (!R.sonido) return; try { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(t); u.lang = 'es-MX'; u.rate = 1.05; speechSynthesis.speak(u); } catch (e) {} }
 const mmss = s => Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+function fechaDeDia(dia) { return sumarDiasF(lunesTxt(), dia); }
+async function marcarFechaRutina(fecha, di) {
+  const ses = sesionDe(di);
+  if (!confirm(`¿Registrar "${ses.nombre}" (${ses.minutos} min) en ${fechaLarga(fecha).toLowerCase()}?`)) return;
+  try { const r = await api('ejercicio', { actividad: ses.nombre, minutos: ses.minutos, kcal: ses.kcal, intensidad: 'media', fuente: 'rutina', fecha }, { carga: 'Registrando…' });
+    await usarPanel(r, fecha); toast('Rutina registrada ✅'); ir(S.tab); } catch (e) { toast(e.message); }
+}
+async function marcarHecha(dia) {
+  const ses = sesionDe(dia), fecha = dia === hoyIdx() ? fechaSel() : fechaDeDia(dia);
+  if (!confirm(`¿Registrar "${ses.nombre}" (${ses.minutos} min, ~${ses.kcal} kcal) en ${fechaLarga(fecha).toLowerCase()}?`)) return;
+  try {
+    const r = await api('ejercicio', { actividad: ses.nombre, minutos: ses.minutos, kcal: ses.kcal, intensidad: 'media', fuente: 'rutina', fecha }, { carga: 'Registrando…' });
+    await usarPanel(r, fecha); toast('Rutina registrada en ' + fechaLarga(fecha).toLowerCase() + ' ✅');
+    await cargarSemana(); ir(S.tab);
+  } catch (e) { toast(e.message); }
+}
 async function iniciarRutina(dia) {
   const ses = sesionDe(dia);
   const primero = ses.pasos.find(p => p.ej);
+  R.fecha = dia < hoyIdx() ? fechaDeDia(dia) : fechaSel();
+  if (R.pasos && $('#player')) return;
   Object.assign(R, { ses, pasos: [{ ej: primero.ej, seg: 6, fase: 'Prepárate', prep: true }].concat(ses.pasos), i: 0, pausa: false, restMs: 0, hecho: 0, sonido: LS.get('ff_sonido', true) });
   try { R.lock = navigator.wakeLock ? await navigator.wakeLock.request('screen') : null; } catch (e) { R.lock = null; }
   beep(660, 0.05);
@@ -1096,10 +1178,11 @@ function pasoR(i) {
       <button class="circ claro" onclick="R.sonido=!R.sonido;LS.set('ff_sonido',R.sonido);this.textContent=R.sonido?'🔊':'🔇'" style="font-size:18px;flex:none">${R.sonido ? '🔊' : '🔇'}</button></div>
     <div class="barra" style="flex:none;margin:14px 0"><i style="width:${(i / total) * 100}%;background:var(--mor)"></i></div>
     <div style="flex:1;min-height:0;display:flex;flex-direction:column;justify-content:center">
-      <div style="border-radius:28px;overflow:hidden;background:${descanso ? 'var(--menta)' : 'var(--cielo)'};position:relative">${FFAnim.svgAnim(mostrar, 'anim-player')}
+      <div style="border-radius:28px;overflow:hidden;background:${descanso ? 'var(--menta)' : p.intenso ? 'var(--dur)' : 'var(--cielo)'};position:relative">${FFAnim.svgAnim(mostrar, 'anim-player')}
         ${descanso ? `<div class="etq" style="position:absolute;top:12px;left:12px;background:#fff;color:var(--menta-t)">Sigue: ${esc(e.nombre)}</div>` : ''}</div>
-      <h2 style="text-align:center;font-size:27px;margin:18px 0 4px;letter-spacing:-.4px">${descanso ? (p.fase === 'Descanso entre rondas' ? 'Descanso entre rondas' : 'Descansa') : esc(e.nombre)}</h2>
-      <p class="mut" style="text-align:center;margin:0 0 6px">${descanso ? 'Sigue: ' + esc(e.nombre) : p.prep ? 'Primer ejercicio' : esc(e.tips ? e.tips[0] : '')}</p>
+      <h2 style="text-align:center;font-size:27px;margin:18px 0 4px;letter-spacing:-.4px">${descanso ? (p.fase === 'Descanso entre rondas' ? 'Descanso entre rondas' : 'Descansa') : p.maquina && p.fase !== e.nombre ? esc(p.fase) : esc(e.nombre)}</h2>
+      ${!descanso && p.nota ? `<div style="text-align:center;margin:2px 0 6px"><span class="etq" style="background:${p.intenso ? 'var(--dur)' : 'var(--menta)'};color:${p.intenso ? 'var(--dur-t)' : 'var(--menta-t)'};font-size:15px;padding:8px 14px">${esc(p.nota)}</span></div>`
+        : `<p class="mut" style="text-align:center;margin:0 0 6px">${descanso ? 'Sigue: ' + esc(e.nombre) : p.prep ? 'Primer ejercicio' : esc(e.tips ? e.tips[0] : '')}</p>`}
       <div style="display:grid;place-items:center;margin:8px 0">${anillo(p.seg, p.seg, 150, 12, '<em id="r_num" style="font-style:normal;font-size:' + (p.seg >= 120 ? 34 : 50) + 'px">' + (p.seg >= 120 ? mmss(p.seg) : p.seg) + '</em>', p.seg >= 120 ? 'restante' : 'segundos', 'rp')}</div>
     </div>
     <div class="fila" style="flex:none;justify-content:center;gap:22px">
@@ -1109,7 +1192,7 @@ function pasoR(i) {
   FFAnim.montar(el);
   if (descanso) hablar('Descansa. Sigue: ' + e.nombre);
   else if (p.prep) hablar('Prepárate. Primer ejercicio: ' + e.nombre);
-  else hablar(e.nombre + (p.seg >= 60 ? ', ' + Math.round(p.seg / 60) + ' minutos' : ', ' + p.seg + ' segundos'));
+  else hablar((p.maquina ? p.fase.replace('·', ',').replace('¡', '').replace('!', '') : e.nombre) + (p.seg >= 60 ? ', ' + Math.round(p.seg / 60) + ' minutos' : ', ' + p.seg + ' segundos') + (p.nota ? '. ' + p.nota.replace('km/h', 'kilómetros por hora').replace('rpm', 'revoluciones').replace(/–/g, ' a ') : ''));
 }
 function tickR() {
   if (!R.pasos || R.pausa) return;
@@ -1153,10 +1236,10 @@ function terminarRutina() {
   hablar('¡Rutina terminada! Excelente trabajo.');
   $('#player').innerHTML = `<div style="flex:1;display:grid;place-items:center;text-align:center"><div><div style="font-size:84px">🏆</div><h2 style="font-size:30px;margin:8px 0">¡Rutina terminada!</h2><p class="mut">${esc(R.ses.nombre)}</p>
     <div class="grid2" style="margin:22px 0;text-align:left"><div class="kpi" style="background:var(--lila);color:var(--lila-t)"><small>Tiempo</small><b>${min} min</b></div><div class="kpi" style="background:var(--dur);color:var(--dur-t)"><small>Quemaste</small><b>~${kcal}</b><span>kcal</span></div></div>
-    <button class="btn mor" id="r_guardar">Guardar en mi día</button><br><button class="btn claro" onclick="cerrarPlayer()">Salir sin guardar</button></div></div>`;
+    <button class="btn mor" id="r_guardar">Guardar en ${R.fecha === hoyLocal() ? 'mi día' : fechaLarga(R.fecha).toLowerCase()}</button><br><button class="btn claro" onclick="cerrarPlayer()">Salir sin guardar</button></div></div>`;
   $('#r_guardar').onclick = async () => {
-    try { const r = await api('ejercicio', { actividad: R.ses.nombre, minutos: min, kcal, intensidad: 'media', fuente: 'rutina' }, { carga: 'Guardando…' });
-      S.panel = r.panel; S.semana = null; cerrarPlayer(); toast('¡Guardado! 💪'); cargarSemana().then(() => { if (S.tab === 'entrena') vEntrena(); }); ir(S.tab); }
+    try { const r = await api('ejercicio', { actividad: R.ses.nombre, minutos: min, kcal, intensidad: 'media', fuente: 'rutina', fecha: R.fecha }, { carga: 'Guardando…' });
+      await usarPanel(r, R.fecha); cerrarPlayer(); toast('¡Guardado! 💪'); cargarSemana().then(() => { if (S.tab === 'entrena') vEntrena(); }); ir(S.tab); }
     catch (e) { toast(e.message); }
   };
 }
@@ -1167,7 +1250,7 @@ const claveSemana = () => S.perfil.id + '_' + lunesTxt();
 function planComidas() {
   const q = Q(), r = planActual();
   const kcal = r && !r.menor ? ((S.panel && S.panel.metas && S.panel.metas.kcal) || r.kcal) : 0;
-  return FFComida.planSemana({ kcal, proteina: r && !r.menor ? r.proteina : 0, comidas: +q.comidas || 4, pref: q.dieta || {}, semilla: claveSemana(), cambios: LS.get('ff_cambios_' + claveSemana(), {}) });
+  return FFComida.planSemana({ kcal, proteina: r && !r.menor ? r.proteina : 0, comidas: +q.comidas || 4, comidasCfg: q.comidasCfg || null, pref: q.dieta || {}, semilla: claveSemana(), cambios: LS.get('ff_cambios_' + claveSemana(), {}) });
 }
 const TIPO_SLOT = { desayuno: 'desayuno', colacion: 'snack', comida: 'comida', cena: 'cena' };
 const BG_SLOT = { desayuno: 'var(--mant)', colacion: 'var(--menta)', comida: 'var(--dur)', cena: 'var(--lila)' };
@@ -1187,14 +1270,17 @@ function vPlan() {
   if (!menor) h += `<div class="grid3" style="margin:0 18px 6px"><div class="kpi" style="background:var(--dur);color:var(--dur-t)"><small>Calorías</small><b style="font-size:22px">${dia.k}</b><span>de ${meta.kcal || '—'}</span></div>
     <div class="kpi" style="background:var(--lila);color:var(--lila-t)"><small>Proteína</small><b style="font-size:22px">${dia.p} g</b><span>de ${meta.proteina || '—'} g</span></div>
     <div class="kpi" style="background:var(--mant);color:var(--mant-t)"><small>Carbs/grasa</small><b style="font-size:22px">${dia.c}/${dia.g}</b><span>gramos</span></div></div>`;
-  h += `<div class="sec"><h2>${DIAS_L[d]}</h2><button class="link" onclick="verSuper()">🛒 Lista del súper</button></div>`;
+  const ven = FFComida.ventanaAyuno(q.comidasCfg);
+  h += `<div class="fila" style="margin:14px 18px 0"><button class="btn chico suave" onclick="ajustarComidas()">⚙️ Ajustar mi plan</button><button class="btn chico claro" style="box-shadow:var(--sombra)" onclick="verSuper()">🛒 Lista del súper</button></div>`;
+  if (ven) h += `<div class="card mant p" style="margin-top:14px;display:flex;gap:12px;align-items:center"><div style="font-size:30px;flex:none">⏱️</div><div style="color:var(--mant-t);font-weight:700">Ayuno ${q.comidasCfg.ayuno === 'omad' ? 'de una comida' : q.comidasCfg.ayuno}<div class="peq" style="font-weight:600;opacity:.85">Comes de ${ven.texto} · agua, café o té sin azúcar el resto del día</div></div></div>`;
+  h += `<div class="sec"><h2>${DIAS_L[d]}</h2><span class="mut">${dia.tiempos.filter(t => !t.complemento).length} ${dia.tiempos.filter(t => !t.complemento).length === 1 ? 'comida' : 'comidas'}</span></div>`;
   h += dia.tiempos.map((t, i) => {
     const hecho = comidos[t.clave];
     return `<div class="card" style="padding:16px"><div class="fila" style="align-items:flex-start;gap:14px"><div class="ico-c" style="width:56px;height:56px;border-radius:18px;background:${BG_SLOT[t.slot]};font-size:28px">${t.pl.e}</div>
-      <div style="flex:1;min-width:0"><div class="mut peq" style="font-weight:700;text-transform:uppercase;letter-spacing:.4px">${t.nombre}</div><b style="font-size:16px;display:block;margin:2px 0">${t.pl.n}</b>
+      <div style="flex:1;min-width:0"><div class="mut peq" style="font-weight:700;text-transform:uppercase;letter-spacing:.4px">${t.hora ? '🕐 ' + t.hora + ' · ' : ''}${t.nombre}</div><b style="font-size:16px;display:block;margin:2px 0">${t.pl.n}</b>
       <span class="mut peq">${t.m !== 1 ? `Porción ×${t.m} · ` : ''}${menor ? '' : `${t.k} kcal · ${t.p} g prot.`}</span></div></div>
       <details style="margin-top:10px"><summary class="link peq">Ingredientes y preparación ›</summary><ul style="margin:8px 0;padding-left:20px;font-size:14px;line-height:1.55">${FFComida.ingredientes(t).map(x => `<li>${esc(x)}</li>`).join('')}</ul><p class="peq" style="margin:0;font-weight:500">${esc(t.pl.prep)}</p></details>
-      <div class="fila" style="margin-top:12px"><button class="btn chico ${hecho ? '' : 'suave'}" style="${hecho ? 'background:var(--verde);color:#fff' : ''}" onclick="comerPlan(${d},${i})">${hecho ? '✓ Registrado' : '✓ Me lo comí'}</button><button class="btn chico claro" style="background:var(--campo)" onclick="cambiarPlan(${d},${i})">↻ Cambiar</button></div></div>`;
+      <div class="fila" style="margin-top:12px"><button class="btn chico ${hecho ? '' : 'suave'}" style="${hecho ? 'background:var(--verde);color:#fff' : ''}" onclick="comerPlan(${d},${i})">${hecho ? '✓ Registrado' : fechaDeDia(d) > hoyLocal() ? 'Aún no llega' : '✓ Me lo comí'}</button><button class="btn chico claro" style="background:var(--campo)" onclick="cambiarPlan(${d},${i})">↻ Cambiar</button></div></div>`;
   }).join('');
   if (!menor && meta.proteina && dia.p < meta.proteina * 0.9) {
     const falta = meta.proteina - dia.p;
@@ -1206,9 +1292,12 @@ function vPlan() {
 async function comerPlan(d, i) {
   const t = planComidas()[d].tiempos[i], k = 'ff_comido_' + claveSemana(), c = LS.get(k, {});
   if (c[t.clave]) return toast('Ya lo registraste');
+  const fecha = fechaDeDia(d);
+  if (fecha > hoyLocal()) return toast('Ese día todavía no llega');
   try {
-    const r = await api('comidaGuardar', { tipo: TIPO_SLOT[t.slot], descripcion: t.pl.n + (t.m !== 1 ? ` (porción ×${t.m})` : ''), kcal: t.k, proteina: t.p, carbs: t.c, grasa: t.g, fuente: 'plan' }, { carga: 'Registrando…' });
-    S.panel = r.panel; S.semana = null; c[t.clave] = 1; LS.set(k, c); toast(esMenor() ? '¡Registrado! 🙌' : `Registrado. Te quedan ${r.panel.restante} kcal`); vPlan();
+    const r = await api('comidaGuardar', { tipo: TIPO_SLOT[t.slot], descripcion: t.pl.n + (t.m !== 1 ? ` (porción ×${t.m})` : ''), kcal: t.k, proteina: t.p, carbs: t.c, grasa: t.g, fuente: 'plan', fecha }, { carga: 'Registrando…' });
+    await usarPanel(r, fecha); c[t.clave] = 1; LS.set(k, c);
+    toast(esMenor() ? '¡Registrado! 🙌' : fecha !== hoyLocal() ? `Registrado en ${fechaLarga(fecha).toLowerCase()}` : `Registrado. Te quedan ${r.panel.restante} kcal`); vPlan();
   } catch (e) { toast(e.message); }
 }
 function cambiarPlan(d, i) {
@@ -1236,11 +1325,13 @@ function vComida() { ({ plan: vPlan, registro: vRegistro, cocina: vCocina })[S.c
 function tarjetasHoy() {
   const q = Q();
   if (!q) return tarjetaCuestionario();
-  const ses = sesionDe(hoyIdx()), hecho = hechosSemana()[hoyIdx()];
-  let h = `<div class="sec"><h2>Hoy toca</h2><button class="link" onclick="ir('entrena')">Ver semana</button></div>
+  const f = fechaSel(), di = (new Date(f + 'T12:00:00').getDay() + 6) % 7, enSemana = f >= lunesTxt();
+  const ses = sesionDe(di), hecho = enSemana && hechosSemana()[di], pasado = !!S.fecha;
+  const accion = hecho ? "ir('entrena')" : pasado ? (enSemana ? `marcarHecha(${di})` : `marcarFechaRutina('${f}',${di})`) : 'iniciarRutina(hoyIdx())';
+  let h = `<div class="sec"><h2>${pasado ? 'Ese día tocaba' : 'Hoy toca'}</h2><button class="link" onclick="ir('entrena')">Ver semana</button></div>
     <div class="card" style="display:flex;gap:14px;align-items:center;padding:14px"><div style="width:92px;height:70px;border-radius:18px;overflow:hidden;background:var(--cielo);flex:none">${FFAnim.svgAnim(ses.ejercicios[0] || 'caminar', 'anim-mini')}</div>
     <div style="flex:1;min-width:0"><b style="display:block">${EMOJI_SES[ses.tipo]} ${esc(ses.nombre)}</b><span class="mut peq">${ses.minutos} min · ~${ses.kcal} kcal</span></div>
-    <button class="btn chico ${hecho ? '' : 'mor'}" style="flex:none;${hecho ? 'background:var(--verde);color:#fff' : ''}" onclick="${hecho ? "ir('entrena')" : 'iniciarRutina(hoyIdx())'}">${hecho ? '✓ Hecho' : '▶ Empezar'}</button></div>`;
+    <button class="btn chico ${hecho ? '' : 'mor'}" style="flex:none;${hecho ? 'background:var(--verde);color:#fff' : ''}" onclick="${accion}">${hecho ? '✓ Hecho' : pasado ? '✓ La hice' : '▶ Empezar'}</button></div>`;
   try {
     const dia = planComidas()[hoyIdx()], hora = new Date().getHours();
     const sl = hora < 11 ? 'desayuno' : hora < 16 ? 'comida' : 'cena';
@@ -1251,9 +1342,184 @@ function tarjetasHoy() {
   return h;
 }
 
+
+// =====================================================================
+//  EQUIPO · ELEGIR RUTINA · ARMA TU RUTINA · AJUSTAR COMIDAS · AYUNO
+// =====================================================================
+const EQUIPOS = [['mancuernas', 'Mancuernas / pesas', '🏋️'], ['caminadora', 'Caminadora', '🏃'], ['bicicleta', 'Bicicleta estática', '🚴'], ['remadora', 'Remadora', '🚣'],
+  ['escaladora', 'Escaladora', '🪜'], ['eliptica', 'Elíptica', '🌀'], ['bodycrunch', 'Body Crunch', '💥']];
+async function guardarQ(cambios, msg) {
+  const q = Object.assign({}, Q() || {}, cambios);
+  const r = await api('perfilPlan', { cuestionario: q, soloAjustes: true }, { carga: 'Guardando…' });
+  S.perfil = r.perfil; S.panel = r.panel; if (msg) toast(msg);
+}
+function miEquipo(st) {
+  const q = Q() || {};
+  st = st || { eq: FFAnim.equiposDe(q), modo: q.cardioModo || 'combinar', usar: q.cardioEnMaquina !== false };
+  const maqs = st.eq.filter(x => FFAnim.MAQUINAS[x]);
+  const h = hoja(`<h3>Mi equipo</h3><p class="mut" style="margin:0 0 14px">Marca lo que tienes. Tus rutinas se arman con esto.</p>
+    <div class="ops dos" style="margin:0">${EQUIPOS.map(([k, t, e]) => `<button class="op ${st.eq.includes(k) ? 'on' : ''}" data-k="${k}"><div class="em">${e}</div><div><b>${t}</b></div></button>`).join('')}</div>
+    ${maqs.length ? `<div class="card" style="margin:16px 0 0"><b>Cardio en máquina</b>
+      <div class="chips" style="margin:10px 0"><button class="chip ${st.modo === 'una' ? 'on' : ''}" data-m="una" style="box-shadow:none;${st.modo === 'una' ? '' : 'background:var(--campo)'}">Una sola máquina</button><button class="chip ${st.modo !== 'una' ? 'on' : ''}" data-m="combinar" style="box-shadow:none;${st.modo !== 'una' ? '' : 'background:var(--campo)'}">Combinar varias</button></div>
+      <p class="mut peq" style="margin:0 0 12px">${st.modo === 'una' ? 'Todo el tiempo en ' + FFAnim.MAQUINAS[maqs[0]].nombre.toLowerCase() + '.' : 'El tiempo se reparte entre: ' + maqs.map(m => FFAnim.MAQUINAS[m].nombre.toLowerCase()).join(', ') + '.'} Puedes cambiarlo cualquier día.</p>
+      <div class="fila"><b style="font-size:15px">Usar máquinas en días de cardio</b><label class="switch"><input type="checkbox" id="eq_usar" ${st.usar ? 'checked' : ''}><span></span></label></div></div>` : ''}
+    <br><button class="btn mor" id="eq_ok">Guardar mi equipo</button>`);
+  h.querySelectorAll('[data-k]').forEach(b => b.onclick = () => { const k = b.dataset.k; st.eq = st.eq.includes(k) ? st.eq.filter(x => x !== k) : st.eq.concat(k); miEquipo(st); });
+  h.querySelectorAll('[data-m]').forEach(b => b.onclick = () => { st.modo = b.dataset.m; miEquipo(st); });
+  const u = $('#eq_usar'); if (u) u.onchange = () => { st.usar = u.checked; };
+  $('#eq_ok').onclick = async () => {
+    try { await guardarQ({ equipos: st.eq, equipo: st.eq.includes('mancuernas') ? 'mancuernas' : 'ninguno', cardioModo: st.modo, cardioEnMaquina: st.usar, maquinasCardio: maqs }, 'Equipo guardado ✅'); cerrarHoja(); ir(S.tab); }
+    catch (e) { toast(e.message); }
+  };
+}
+const OPC_RUT = [['fuerzaA', '🏋️'], ['fuerzaB', '💪'], ['pierna', '🍑'], ['superior', '🦾'], ['core', '🧘'], ['cardio', '🔥'], ['maquina', '🚴'], ['activo', '🚶'], ['descanso', '😌']];
+function elegirRutina(dia, st) {
+  const q = Q(); st = st || { min: +(q.minutos || 30) };
+  const maqs = FFAnim.equiposDe(q).filter(x => FFAnim.MAQUINAS[x]);
+  const mis = LS.get('ff_misrut_' + S.perfil.id, []);
+  const qp = qConPeso();
+  const h = hoja(`<h3>Rutina del ${DIAS_L[dia].toLowerCase()}</h3><p class="mut" style="margin:0 0 12px">${fechaLarga(fechaDeDia(dia))}. Elige qué quieres hacer.</p>
+    <label style="margin-top:0">Duración</label><div class="chips" id="er_min">${[15, 20, 30, 45, 60, 75].map(n => `<button class="chip ${st.min === n ? 'on' : ''}" data-n="${n}">${n} min</button>`).join('')}</div>
+    <div class="ops" style="margin:14px 0 0">${OPC_RUT.filter(([t]) => t !== 'maquina' || maqs.length).map(([t, e]) => { const se = FFAnim.armarSesion(t, qp, { minutos: st.min });
+      return `<button class="op" data-t="${t}"><div class="em">${e}</div><div><b>${t === 'maquina' ? 'Cardio en máquina' : NOMBRE_SESION[t]}</b><small>${t === 'maquina' ? 'Elige una o varias máquinas' : se.minutos + ' min · ~' + se.kcal + ' kcal'}</small></div></button>`; }).join('')}
+    ${mis.map((m, i) => `<button class="op" data-mi="${i}"><div class="em">⭐</div><div><b>${esc(m.nombre)}</b><small>Mi rutina · ${m.ejercicios.length} ejercicios · ${m.rondas} rondas</small></div></button>`).join('')}
+    <button class="op" id="er_armar" style="border:2px dashed var(--mor)"><div class="em">➕</div><div><b>Arma tu rutina</b><small>Elige tus ejercicios, tiempos y rondas</small></div></button></div>
+    ${LS.get(claveRut(fechaDeDia(dia)), null) || (q.semanaPersonal && q.semanaPersonal[dia]) ? `<br><button class="btn claro" id="er_reset">Volver a la rutina recomendada</button>` : ''}`);
+  h.querySelectorAll('#er_min .chip').forEach(b => b.onclick = () => { st.min = +b.dataset.n; elegirRutina(dia, st); });
+  h.querySelectorAll('[data-t]').forEach(b => b.onclick = () => b.dataset.t === 'maquina' ? elegirMaquinas(dia, st) : aplicarRutina(dia, b.dataset.t, { minutos: st.min }));
+  h.querySelectorAll('[data-mi]').forEach(b => b.onclick = () => { const m = mis[+b.dataset.mi]; aplicarRutina(dia, 'libre', { ejercicios: m.ejercicios, trabajo: m.trabajo, descanso: m.descanso, rondas: m.rondas, nombre: m.nombre }); });
+  $('#er_armar').onclick = () => armarRutina(dia);
+  const rs = $('#er_reset');
+  if (rs) rs.onclick = async () => {
+    LS.del(claveRut(fechaDeDia(dia)));
+    if (q.semanaPersonal && q.semanaPersonal[dia]) { const sp = q.semanaPersonal.slice(), so = (q.semanaOpts || []).slice(); sp[dia] = null; so[dia] = null; try { await guardarQ({ semanaPersonal: sp, semanaOpts: so }); } catch (e) { toast(e.message); } }
+    cerrarHoja(); S.diaEnt = dia; vEntrena(); toast('Rutina recomendada');
+  };
+}
+function elegirMaquinas(dia, st) {
+  const q = Q(), maqs = FFAnim.equiposDe(q).filter(x => FFAnim.MAQUINAS[x]);
+  if (!st.maqs) { st.maqs = (q.maquinasCardio || []).filter(m => maqs.includes(m)); if (q.cardioModo === 'una') st.maqs = st.maqs.slice(0, 1); if (!st.maqs.length) st.maqs = maqs.slice(0, 1); }
+  const modo = st.maqs.length > 1 ? 'combinar' : 'una';
+  const ses = FFAnim.armarSesion('maquina', qConPeso(), { maquinas: st.maqs, minutos: st.min, modo });
+  const h = hoja(`<h3>Cardio en máquina</h3><p class="mut" style="margin:0 0 12px">Toca una o varias. Te digo cuánto tiempo en cada una.</p>
+    <div class="ej-grid" style="margin:0">${maqs.map(m => { const M = FFAnim.MAQUINAS[m], on = st.maqs.includes(m); return `<button class="ej-card" data-m="${m}" style="${on ? 'outline:3px solid var(--mor);outline-offset:-3px' : 'opacity:.7'}">${FFAnim.svgAnim(M.ej)}<div><b>${on ? '✓ ' : ''}${M.nombre}</b></div></button>`; }).join('')}</div>
+    <label>Duración total</label><div class="chips" id="em_min">${[15, 20, 30, 45, 60, 75].map(n => `<button class="chip ${st.min === n ? 'on' : ''}" data-n="${n}">${n} min</button>`).join('')}</div>
+    <div class="card" style="margin:14px 0 0"><b>Tu sesión</b><ul class="lista">${Object.entries(ses.bloques).map(([m, sg]) => `<li><div class="ico-c" style="background:var(--cielo);font-size:20px">${FFAnim.MAQUINAS[m].emoji}</div><div class="tx"><b>${FFAnim.MAQUINAS[m].nombre}</b><span class="mut peq">${esc(FFAnim.MAQUINAS[m].mod[ses.cfg.nivel - 1])}</span></div><b style="flex:none">${Math.round(sg / 60)} min</b></li>`).join('')}</ul>
+    <p class="mut peq" style="margin:6px 0 0">Total ${ses.minutos} min · ~${ses.kcal} kcal${ses.cfg.nivel > 1 ? ' · con intervalos moderado/fuerte' : ''}. Incluye calentamiento y enfriamiento.</p></div>
+    <br><button class="btn mor" id="em_ok">Usar esta sesión</button>`);
+  FFAnim.montar(h);
+  h.querySelectorAll('[data-m]').forEach(b => b.onclick = () => { const m = b.dataset.m; st.maqs = st.maqs.includes(m) ? st.maqs.filter(x => x !== m) : st.maqs.concat(m); if (!st.maqs.length) st.maqs = [m]; elegirMaquinas(dia, st); });
+  h.querySelectorAll('#em_min .chip').forEach(b => b.onclick = () => { st.min = +b.dataset.n; elegirMaquinas(dia, st); });
+  $('#em_ok').onclick = () => aplicarRutina(dia, 'maquina', { maquinas: st.maqs, minutos: st.min, modo });
+}
+function aplicarRutina(dia, tipo, opts) {
+  const nombre = opts.nombre || (tipo === 'maquina' ? 'Cardio en ' + opts.maquinas.map(m => FFAnim.MAQUINAS[m].nombre.toLowerCase()).join(' + ') : NOMBRE_SESION[tipo]);
+  hoja(`<h3>¿Cuándo la quieres?</h3><p class="mut" style="margin:0 0 14px">${esc(nombre)} · ${opts.minutos ? opts.minutos + ' min' : ''}</p>
+    <div class="ops" style="margin:0"><button class="op" id="ap_dia"><div class="em">📅</div><div><b>Solo este ${DIAS_L[dia].toLowerCase()}</b><small>${fechaLarga(fechaDeDia(dia))}</small></div></button>
+    <button class="op" id="ap_sem"><div class="em">🔁</div><div><b>Todos los ${DIAS_L[dia].toLowerCase()}</b><small>Cambia tu semana de entrenamiento</small></div></button></div>`);
+  $('#ap_dia').onclick = () => { LS.set(claveRut(fechaDeDia(dia)), { tipo, opts }); cerrarHoja(); S.diaEnt = dia; vEntrena(); toast('Rutina cambiada ✅'); };
+  $('#ap_sem').onclick = async () => {
+    const q = Q(), sp = (q.semanaPersonal || [null, null, null, null, null, null, null]).slice(), so = (q.semanaOpts || [null, null, null, null, null, null, null]).slice();
+    sp[dia] = tipo; so[dia] = opts; LS.del(claveRut(fechaDeDia(dia)));
+    try { await guardarQ({ semanaPersonal: sp, semanaOpts: so }, 'Semana actualizada ✅'); cerrarHoja(); S.diaEnt = dia; vEntrena(); } catch (e) { toast(e.message); }
+  };
+}
+function armarRutina(dia, st) {
+  const cfg = FFAnim.armarSesion('fuerzaA', qConPeso()).cfg;
+  st = st || { sel: [], trabajo: 40, descanso: 20, rondas: 3, nombre: '' };
+  const disp = Object.keys(FF_EJ).filter(id => { const e = FF_EJ[id];
+    if (e.equipo === 'mancuernas' && !cfg.mancuernas) return false;
+    if (e.equipo && FFAnim.MAQUINAS[e.equipo] && !cfg.maquinas.includes(e.equipo)) return false;
+    return !/Estiramiento|Movilidad/.test(e.grupo) && id !== 'caminar'; });
+  const ses = st.sel.length ? FFAnim.armarSesion('libre', qConPeso(), { ejercicios: st.sel, trabajo: st.trabajo, descanso: st.descanso, rondas: st.rondas }) : null;
+  const h = hoja(`<h3>Arma tu rutina</h3><p class="mut" style="margin:0 0 10px">Toca los ejercicios en el orden que quieras. Elegidos: <b>${st.sel.length}</b></p>
+    <div class="ej-grid" style="margin:0">${disp.map(id => { const k = st.sel.indexOf(id); return `<button class="ej-card" data-id="${id}" style="position:relative;${k >= 0 ? 'outline:3px solid var(--mor);outline-offset:-3px' : ''}">${k >= 0 ? `<span style="position:absolute;top:8px;left:8px;background:var(--mor);color:#fff;border-radius:50%;width:26px;height:26px;display:grid;place-items:center;font-weight:800;font-size:13px;z-index:2">${k + 1}</span>` : ''}${FFAnim.svgAnim(id)}<div><b>${FF_EJ[id].nombre}</b><span class="mut peq">${FF_EJ[id].grupo}</span></div></button>`; }).join('')}</div>
+    <label>Tiempo por ejercicio</label><div class="chips" id="ar_t">${[30, 40, 45, 60, 90].map(n => `<button class="chip ${st.trabajo === n ? 'on' : ''}" data-n="${n}">${n} s</button>`).join('')}</div>
+    <label>Descanso</label><div class="chips" id="ar_d">${[0, 10, 15, 20, 30].map(n => `<button class="chip ${st.descanso === n ? 'on' : ''}" data-n="${n}">${n ? n + ' s' : 'Sin descanso'}</button>`).join('')}</div>
+    <label>Rondas</label><div class="chips" id="ar_r">${[1, 2, 3, 4, 5].map(n => `<button class="chip ${st.rondas === n ? 'on' : ''}" data-n="${n}">${n}</button>`).join('')}</div>
+    <label>Nombre para guardarla</label><input id="ar_n" value="${esc(st.nombre)}" placeholder="Ej. Brazos rápidos">
+    ${ses ? `<p style="margin:12px 0 0;font-weight:700">${ses.minutos} min · ~${ses.kcal} kcal <span class="mut peq">(con calentamiento y estiramientos)</span></p>` : ''}
+    <br><button class="btn mor" id="ar_ok" ${st.sel.length ? '' : 'disabled'}>Guardar y usar</button>`);
+  FFAnim.montar(h);
+  const keep = () => { st.nombre = $('#ar_n').value; };
+  const redibujar = () => { const y = $('#hoja').firstElementChild.scrollTop; armarRutina(dia, st); $('#hoja').firstElementChild.scrollTop = y; };
+  h.querySelectorAll('[data-id]').forEach(b => b.onclick = () => { keep(); const id = b.dataset.id; st.sel = st.sel.includes(id) ? st.sel.filter(x => x !== id) : st.sel.concat(id); redibujar(); });
+  [['#ar_t', 'trabajo'], ['#ar_d', 'descanso'], ['#ar_r', 'rondas']].forEach(([sel, k]) => h.querySelectorAll(sel + ' .chip').forEach(b => b.onclick = () => { keep(); st[k] = +b.dataset.n; redibujar(); }));
+  $('#ar_ok').onclick = () => {
+    keep(); const nombre = st.nombre.trim() || 'Mi rutina', mis = LS.get('ff_misrut_' + S.perfil.id, []);
+    mis.unshift({ nombre, ejercicios: st.sel, trabajo: st.trabajo, descanso: st.descanso, rondas: st.rondas }); LS.set('ff_misrut_' + S.perfil.id, mis.slice(0, 12));
+    aplicarRutina(dia, 'libre', { ejercicios: st.sel, trabajo: st.trabajo, descanso: st.descanso, rondas: st.rondas, nombre });
+  };
+}
+
+// ---------- Tiempos de comida / ayuno (cuestionario y ajustes) ----------
+const TIEMPOS_UI = [['desayuno', 'Desayuno'], ['colacion1', 'Colación mañana'], ['comida', 'Comida'], ['colacion2', 'Colación tarde'], ['cena', 'Cena']];
+const AYUNO_UI = [[null, 'No hago ayuno'], ['14:10', '14:10'], ['16:8', '16:8'], ['18:6', '18:6'], ['20:4', '20:4'], ['omad', 'Una comida al día']];
+function tiemposDeCfg(cc, n) {
+  if (cc && cc.tiempos && cc.tiempos.length) return cc.tiempos;
+  return { 3: ['desayuno', 'comida', 'cena'], 5: ['desayuno', 'colacion1', 'comida', 'colacion2', 'cena'] }[n] || ['desayuno', 'colacion1', 'comida', 'cena'];
+}
+/** Bloque reutilizable. base = 'W.d' (cuestionario) o 'AJ' (ajustes). */
+function htmlTiempos(cc, n, puedeAyuno, diabetes, base, redibujar) {
+  cc = cc || {};
+  const sel = tiemposDeCfg(cc, n), set = (code) => `${base}.comidasCfg=Object.assign({},${base}.comidasCfg||{},${code});${redibujar}`;
+  let h = `<div class="sec" style="margin-top:0"><h2>¿Haces ayuno intermitente?</h2></div><div class="chips" style="margin:0 18px">${AYUNO_UI.filter(x => puedeAyuno || !x[0]).map(([v, t]) =>
+    `<button class="chip ${(cc.ayuno || null) === v ? 'on' : ''}" onclick="${set('{ayuno:' + (v ? "'" + v + "'" : 'null') + '}')}">${t}</button>`).join('')}</div>`;
+  if (!puedeAyuno) h += `<p class="mut peq" style="margin:8px 22px 0">El ayuno no se recomienda en menores, embarazo ni lactancia.</p>`;
+  if (cc.ayuno) {
+    const v = FFComida.ventanaAyuno(Object.assign({ inicio: 12 }, cc));
+    h += `<div class="sec"><h2>¿A qué hora empiezas a comer?</h2></div><div class="chips" style="margin:0 18px">${[7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17].map(x => `<button class="chip ${(+cc.inicio || 12) === x ? 'on' : ''}" onclick="${set('{inicio:' + x + '}')}">${x}:00</button>`).join('')}</div>
+      <div class="card mant p" style="margin-top:14px"><b style="color:var(--mant-t)">Comes de ${v.texto} y ayunas ${v.ayunoHoras} horas.</b><div class="peq" style="color:var(--mant-t);font-weight:600;margin-top:4px">${FFComida.tiemposDe(cc).map(t => t.hora + ' ' + t.nombre).join(' · ')}</div></div>`;
+    if (diabetes) h += `<div class="aviso">⚠️ Con diabetes, consulta a tu médico antes de hacer ayuno: puede bajarte el azúcar.</div>`;
+  } else {
+    h += `<div class="sec"><h2>¿Qué comidas haces?</h2><span class="mut">quita las que no</span></div><div class="chips" style="margin:0 18px">${TIEMPOS_UI.map(([k, t]) => {
+      const on = sel.includes(k), nuevo = on ? sel.filter(x => x !== k) : sel.concat(k);
+      return `<button class="chip ${on ? 'on' : ''}" onclick="${nuevo.length ? set('{tiempos:' + JSON.stringify(nuevo).replace(/"/g, "'") + '}') : "toast('Deja al menos una comida')"}">${t}</button>`; }).join('')}</div>
+      <p class="mut peq" style="margin:8px 22px 0">${sel.length === 1 ? 'Una sola comida: le agregamos complementos para que alcances tus calorías y proteína.' : sel.length + ' comidas al día. Las calorías se reparten según cada una.'}</p>`;
+  }
+  return h;
+}
+let AJ = null;
+function ajustarComidas() {
+  const q = Q();
+  AJ = AJ || { comidasCfg: Object.assign({}, q.comidasCfg || {}), dieta: Object.assign({}, q.dieta || {}) };
+  if (!AJ.comidasCfg.tiempos) AJ.comidasCfg.tiempos = tiemposDeCfg(null, +q.comidas || 4);
+  const puede = !q.menor && !q.embarazo;
+  AJ._re = true;
+  const h = hoja(`<h3>Ajustar mi plan de comidas</h3><p class="mut" style="margin:0 0 6px">Elige cuántas veces comes, quita la cena o haz ayuno.</p>
+    <div style="margin:0 -18px">${htmlTiempos(AJ.comidasCfg, +q.comidas || 4, puede, (q.condiciones || []).includes('diabetes'), 'AJ', 'ajustarComidas()')}
+    <div class="sec"><h2>¿Algo que no comes?</h2></div><div class="chips" style="margin:0 18px">${[['vegetariano', 'Vegetariano'], ['sinCerdo', 'Sin cerdo'], ['sinPescado', 'Sin pescado'], ['sinLacteos', 'Sin lácteos'], ['sinHuevo', 'Sin huevo']].map(([k, t]) => `<button class="chip ${AJ.dieta[k] ? 'on' : ''}" onclick="AJ.dieta['${k}']=!AJ.dieta['${k}'];ajustarComidas()">${t}</button>`).join('')}</div></div>
+    <br><button class="btn mor" id="aj_ok">Guardar y rehacer mi plan</button>`);
+  AJ._re = false;
+  const y = AJ._y || 0; h.firstElementChild.scrollTop = y; h.firstElementChild.onscroll = () => { if (AJ) AJ._y = h.firstElementChild.scrollTop; };
+  $('#aj_ok').onclick = async () => {
+    const cc = AJ.comidasCfg.ayuno ? { ayuno: AJ.comidasCfg.ayuno, inicio: +AJ.comidasCfg.inicio || 12, tiempos: AJ.comidasCfg.tiempos } : { ayuno: null, tiempos: AJ.comidasCfg.tiempos };
+    try {
+      await guardarQ({ comidasCfg: cc, dieta: AJ.dieta, comidas: FFComida.tiemposDe(cc, 4).length }, 'Plan actualizado ✅');
+      LS.del('ff_cambios_' + claveSemana()); AJ = null; cerrarHoja(); vPlan();
+    } catch (e) { toast(e.message); }
+  };
+}
+const _cerrarHojaOrig = cerrarHoja;
+cerrarHoja = function () { if (AJ && !AJ._re) AJ = null; _cerrarHojaOrig(); };
+
+function tarjetaAyuno() {
+  const q = Q(), v = q && FFComida.ventanaAyuno(q.comidasCfg);
+  if (!v || S.fecha) return '';
+  const now = new Date(), h = now.getHours() + now.getMinutes() / 60, fin = v.fin % 24;
+  const dentro = v.fin <= 24 ? (h >= v.ini && h < v.fin) : (h >= v.ini || h < fin);
+  const total = dentro ? v.horas : 24 - v.horas, trans = dentro ? (h - v.ini + 24) % 24 : (h - fin + 24) % 24, falta = Math.max(0, total - trans);
+  const fmt = x => Math.floor(x) + ' h ' + String(Math.round((x % 1) * 60)).padStart(2, '0') + ' min';
+  const hh = x => String(Math.floor(x) % 24).padStart(2, '0') + ':' + String(Math.round((x % 1) * 60)).padStart(2, '0');
+  const col = dentro ? 'var(--menta-t)' : 'var(--mant-t)';
+  return `<div class="card ${dentro ? 'menta' : 'mant'} p"><div class="fila" style="color:${col}"><b style="font-size:17px">${dentro ? '🍽️ Ventana de comida abierta' : '⏱️ En ayuno'}</b><b style="flex:none;font-size:20px">${Math.round(trans / total * 100)}%</b></div>
+    <div class="barra" style="height:10px;margin:10px 0 8px;background:rgba(255,255,255,.7)"><i style="width:${trans / total * 100}%;background:${col}"></i></div>
+    <div class="peq" style="font-weight:600;color:${col}">${dentro ? 'Cierra a las ' + hh(v.fin) + ' · quedan ' + fmt(falta) : 'Llevas ' + fmt(trans) + ' de ' + v.ayunoHoras + ' h · comes a las ' + hh(v.ini)}</div></div>`;
+}
+
 document.addEventListener('keydown', e => { if (e.key === 'Escape') cerrarHoja(); });
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && S.perfil && S.tab === 'hoy') refrescarPanel().then(vHoy).catch(() => {});
+  if (document.visibilityState === 'visible' && S.perfil && S.tab === 'hoy') { if (S.fecha && S.fecha > hoyLocal()) S.fecha = null; refrescarPanel().then(vHoy).catch(() => {}); }
 });
 iniciar();
 </script>
